@@ -1,8 +1,7 @@
 from aws_cdk import (
-    aws_iam as iam,
-    aws_sqs as sqs,
-    aws_sns as sns,
-    aws_sns_subscriptions as subs,
+    aws_lambda as _lambda,
+    aws_s3_notifications as _s3notification,
+    aws_s3 as _s3,
     core
 )
 
@@ -11,13 +10,16 @@ class VaquitaStack(core.Stack):
     def __init__(self, scope: core.Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
 
-        queue = sqs.Queue(
-            self, "VaquitaQueue",
-            visibility_timeout=core.Duration.seconds(300),
-        )
+        # create lambda function
+        function = _lambda.Function(self, "lambda_function",
+                                    runtime=_lambda.Runtime.PYTHON_3_7,
+                                    handler="lambda-handler.main",
+                                    code=_lambda.Code.asset("./lambda"))
+        # create s3 bucket
+        s3 = _s3.Bucket(self, "s3bucket")
 
-        topic = sns.Topic(
-            self, "VaquitaTopic"
-        )
+        # create s3 notification for lambda function
+        notification = _s3notification.LambdaDestination(function)
 
-        topic.add_subscription(subs.SqsSubscription(queue))
+        # assign notification for the s3 event type (ex: OBJECT_CREATED)
+        s3.add_event_notification(_s3.EventType.OBJECT_CREATED, notification)
