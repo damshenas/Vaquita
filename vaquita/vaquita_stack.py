@@ -11,15 +11,15 @@ class VaquitaStack(core.Stack):
         super().__init__(scope, id, **kwargs)
 
         # create lambda function
-        function = _lambda.Function(self, "lambda_function",
+        getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
                                     runtime=_lambda.Runtime.PYTHON_3_7,
-                                    handler="lambda-handler.main",
-                                    code=_lambda.Code.asset("./lambda"))
+                                    handler="main.handler",
+                                    code=_lambda.Code.asset("./src/getSignedUrl"))
         # create s3 bucket
-        s3 = _s3.Bucket(self, "s3bucket")
+        imagesS3Bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
 
         # create s3 notification for lambda function
-        notification = _s3notification.LambdaDestination(function)
+        newImageAddedNotification = _s3notification.LambdaDestination(getSignedUrlFunction)
 
         # assign notification for the s3 event type (ex: OBJECT_CREATED)
-        s3.add_event_notification(_s3.EventType.OBJECT_CREATED, notification)
+        imagesS3Bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, newImageAddedNotification)
