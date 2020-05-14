@@ -15,7 +15,8 @@ class VaquitaStack(core.Stack):
 
         ### cognito
         usersPool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
-            auto_verify=_cognito.AutoVerifiedAttrs.email)
+            # auto_verify=_cognito.AutoVerifiedAttrs.email)
+            auto_verify={"email": True})
 
         ### lambda function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
@@ -40,30 +41,31 @@ class VaquitaStack(core.Stack):
         apiGatewayResource = apiGateway.root.add_resource('vaquita')
 
         apiGatewayAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_AUTHORIZER",
-            rest_api_id=apiGatewayResource.rest_api_id,
-            type=_apigw.AuthorizationType.COGNITO,
+            rest_api_id=apiGatewayResource.rest_api.rest_api_id,
+            type="COGNITO", #_apigw.AuthorizationType.COGNITO,
             identity_source="method.request.header.Authorization",
-            provider_arns=[usersPool.userPoolArn])
+            provider_arns=[usersPool.user_pool_arn])
 
         geySignedUrlIntegration = _apigw.LambdaIntegration(
             getSignedUrlFunction, 
             proxy=False, 
             integration_responses=[{
                 'statusCode': '200',
-                'responseParameters': {
-                    'method.response.header.Access-Control-Allow-Origin': "'*'",
+               'responseParameters': {
+                   'method.response.header.Access-Control-Allow-Origin': "'*'",
                 }
             }])
 
         apiGatewayResource.add_method('GET', geySignedUrlIntegration,
             authorization_type=_apigw.AuthorizationType.COGNITO,
-            authorizer= {"authorizerId": apiGatewayAuthorizer.ref},
+            # authorizer= {"authorizerId": apiGatewayAuthorizer.ref},
             method_responses=[{
                 'statusCode': '200',
                 'responseParameters': {
                     'method.response.header.Access-Control-Allow-Origin': True,
                 }
-            }])
+            }]
+            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayAuthorizer.ref)
 
         self.add_cors_options(apiGatewayResource)
 
