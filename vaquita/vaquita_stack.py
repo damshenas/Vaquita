@@ -42,7 +42,8 @@ class VaquitaStack(core.Stack):
 
         apiGatewayAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_AUTHORIZER",
             rest_api_id=apiGatewayResource.rest_api.rest_api_id,
-            type="COGNITO", #_apigw.AuthorizationType.COGNITO,
+            name="VAQUITA_API_GATEWAY_AUTHORIZER",
+            type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
             identity_source="method.request.header.Authorization",
             provider_arns=[usersPool.user_pool_arn])
 
