@@ -14,7 +14,8 @@ class VaquitaStack(core.Stack):
         super().__init__(scope, id, **kwargs)
 
         ### cognito
-        usersPool = _cognito.UserPool(self, "VAQUITA_USERS")
+        usersPool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
+            auto_verify=_cognito.AutoVerifiedAttrs.email)
 
         ### lambda function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
@@ -38,6 +39,12 @@ class VaquitaStack(core.Stack):
 
         apiGatewayResource = apiGateway.root.add_resource('vaquita')
 
+        apiGatewayAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_AUTHORIZER",
+            rest_api_id=apiGatewayResource.rest_api_id,
+            type=_apigw.AuthorizationType.COGNITO,
+            identity_source="method.request.header.Authorization",
+            provider_arns=[usersPool.userPoolArn])
+
         geySignedUrlIntegration = _apigw.LambdaIntegration(
             getSignedUrlFunction, 
             proxy=False, 
@@ -46,19 +53,17 @@ class VaquitaStack(core.Stack):
                 'responseParameters': {
                     'method.response.header.Access-Control-Allow-Origin': "'*'",
                 }
-            }]
-        )
-        
-        apiGatewayResource.add_method('GET', geySignedUrlIntegration, 
-            # authorization_type=AuthorizationType.COGNITO,
-            # authorization_scopes=["Scope1", "Scope2"],
+            }])
+
+        apiGatewayResource.add_method('GET', geySignedUrlIntegration,
+            authorization_type=_apigw.AuthorizationType.COGNITO,
+            authorizer= {"authorizerId": apiGatewayAuthorizer.ref},
             method_responses=[{
                 'statusCode': '200',
                 'responseParameters': {
                     'method.response.header.Access-Control-Allow-Origin': True,
                 }
-            }]
-        )
+            }])
 
         self.add_cors_options(apiGatewayResource)
 
