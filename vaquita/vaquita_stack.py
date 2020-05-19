@@ -8,6 +8,10 @@ from aws_cdk import (
     core
 )
 
+# read config file
+
+# create first user of the cognito user pool?
+
 class VaquitaStack(core.Stack):
 
     def __init__(self, scope: core.Construct, id: str, **kwargs) -> None:
@@ -15,8 +19,21 @@ class VaquitaStack(core.Stack):
 
         ### cognito
         usersPool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
-            # auto_verify=_cognito.AutoVerifiedAttrs.email)
-            auto_verify={"email": True})
+            auto_verify={"email": True},
+            self_sign_up_enabled=True)
+
+        userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
+            supported_identity_providers=["COGNITO"],
+            allowed_o_auth_flows=["implicit"],
+            allowed_o_auth_scopes=["phone", "email", "openid", "profile"],
+            user_pool_id=usersPool.user_pool_id,
+            callback_ur_ls=["https://www.amazon.com/"], #should read from config fileß
+            allowed_o_auth_flows_user_pool_client=True,
+            explicit_auth_flows=["ALLOW_REFRESH_TOKEN_AUTH"])
+
+        userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
+            user_pool=usersPool, 
+            cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
         ### lambda function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
