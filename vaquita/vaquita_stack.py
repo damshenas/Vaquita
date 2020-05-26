@@ -35,18 +35,28 @@ class VaquitaStack(core.Stack):
             user_pool=usersPool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
+        ### S3
+        imagesS3Bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
+
         ### lambda function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
+            function_name="VAQUITA_GET_SIGNED_URL",
+            environment={"image_bucket_name": imagesS3Bucket.bucket_name, "test": "true"},
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/getSignedUrl"))
 
         imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
+            function_name="VAQUITA_IMAGE_ANALYSIS",
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis"))
 
+        newImageAddedNotification = _s3notification.LambdaDestination(imageAnalyzerFunction)
+        imagesS3Bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, newImageAddedNotification)
+
         imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
+            function_name="VAQUITA_IMAGE_SEARCH",
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageSearch"))
@@ -102,13 +112,6 @@ class VaquitaStack(core.Stack):
         #                             )
         #                         ]
         #                         )
-
-        ### S3
-        imagesS3Bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
-
-        newImageAddedNotification = _s3notification.LambdaDestination(getSignedUrlFunction)
-
-        imagesS3Bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, newImageAddedNotification)
 
     def add_cors_options(self, apigw_resource):
         apigw_resource.add_method('OPTIONS', _apigw.MockIntegration(

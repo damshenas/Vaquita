@@ -1,5 +1,9 @@
 import json
+import boto3
+import logging
+import os
 
+from botocore.exceptions import ClientError
 
 def handler(event, context):
     print('request: {}'.format(json.dumps(event)))
@@ -8,19 +12,13 @@ def handler(event, context):
         'headers': {
             'Content-Type': 'text/plain'
         },
-        'body': 'Hello, CDK! You have hit {}\n'.format(event['path'])
+        'body': create_presigned_post(os.environ['image_bucket_name'], "filename1")
     }
-
-############ 
-### https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-presigned-urls.html
-
-import boto3
-from botocore.exceptions import ClientError
-
 
 def create_presigned_post(bucket_name, object_name,
                           fields=None, conditions=None, expiration=3600):
     """Generate a presigned URL S3 POST request to upload a file
+    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-presigned-urls.html
 
     :param bucket_name: string
     :param object_name: string
