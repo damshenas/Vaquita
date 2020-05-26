@@ -76,7 +76,7 @@ class VaquitaStack(core.Stack):
 
         geySignedUrlIntegration = _apigw.LambdaIntegration(
             getSignedUrlFunction, 
-            proxy=False, 
+            proxy=True, 
             integration_responses=[{
                 'statusCode': '200',
                'responseParameters': {
