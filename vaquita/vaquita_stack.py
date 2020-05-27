@@ -79,7 +79,7 @@ class VaquitaStack(core.Stack):
         ### get signed URL function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
             function_name="VAQUITA_GET_SIGNED_URL",
-            environment={"image_bucket_name": imagesS3Bucket.bucket_name, "test": "true"},
+            environment={"image_bucket_name": imagesS3Bucket.bucket_name},
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/getSignedUrl"))
@@ -93,6 +93,8 @@ class VaquitaStack(core.Stack):
                    'method.response.header.Access-Control-Allow-Origin': "'*'",
                 }
             }])
+
+        imagesS3Bucket.grant_put(getSignedUrlFunction)
 
         ### image analyer function
         imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
