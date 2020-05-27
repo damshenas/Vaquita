@@ -2,40 +2,37 @@ import json
 import boto3
 import logging
 import os
+import time
+import hashlib
 
 from botocore.exceptions import ClientError
 
 def handler(event, context):
-    object_name = event["queryStringParameters"]["object_name"]
+    uniquehash = hashlib.sha1("{}".format(time.time_ns()).encode('utf-8')).hexdigest()
+    result = create_presigned_post(os.environ['image_bucket_name'], uniquehash)
 
     return {
         'statusCode': 200,
         'headers': {
-            'Content-Type': 'text/plain'
+            'Content-Type': 'application/json; charset=UTF-8'
         },
-        'body': create_presigned_url(os.environ['image_bucket_name'], object_name)
+        'body': json.dumps(result)
     }
 
-def create_presigned_url(bucket_name, object_name, expiration=3600):
-    """Generate a presigned URL to share an S3 object
-    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-presigned-urls.html
+def create_presigned_post(bucket_name, object_name,
+                          fields=None, conditions=None, expiration=3600):
 
-    :param bucket_name: string
-    :param object_name: string
-    :param expiration: Time in seconds for the presigned URL to remain valid
-    :return: Presigned URL as string. If error, returns None.
-    """
-
-    # Generate a presigned URL for the S3 object
+    # Generate a presigned S3 POST URL
     s3_client = boto3.client('s3')
     try:
-        response = s3_client.generate_presigned_url('get_object',
-                                                    Params={'Bucket': bucket_name,
-                                                            'Key': object_name},
-                                                    ExpiresIn=expiration)
+        response = s3_client.generate_presigned_post(bucket_name,
+                                                     object_name,
+                                                     Fields=fields,
+                                                     Conditions=conditions,
+                                                     ExpiresIn=expiration)
     except ClientError as e:
         logging.error(e)
         return None
 
-    # The response contains the presigned URL
+    # The response contains the presigned URL and required fields
     return response

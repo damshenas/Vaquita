@@ -1,0 +1,55 @@
+<html>
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <script src="https://code.jquery.com/jquery-1.9.1.min.js"></script>
+  <script>
+    $(document).ready(function () {
+      if (window.location.hash) {
+        var authData = window.location.hash.substring(1);
+        var idToken = authData.split('&').find((rec) => rec.split('=')[0] == 'id_token').split('=')[1]
+        var getSignedUrlEndpoint = window.location.href.split('#')[0].replace('web', 'signedUrl')
+        $.ajax({
+          url: getSignedUrlEndpoint,
+          headers: { 'Authorization': idToken },
+          type: "GET",
+          contentType: 'application/json; charset=utf-8',
+          success: function (result) {
+            console.log(result);
+            $('form').attr('action', result.url);
+            $('input[name="key"]').val(result.fields.key);
+            $('input[name="X-Amz-Credential"]').val(result.fields['x-amz-credential']);
+            $('input[name="X-Amz-Algorithm"]').val(result.fields['x-amz-algorithm']);
+            $('input[name="X-Amz-Date"]').val(result.fields['x-amz-date']);
+            $('input[name="x-amz-security-token"]').val(result.fields['x-amz-security-token']);
+            $('input[name="Policy"]').val(result.fields.policy);
+            $('input[name="X-Amz-Signature"]').val(result.fields['x-amz-signature']);
+          },
+          error: function (error) {
+            console.log(error);
+          }
+        });
+      } else {
+        console.log('Authorization information from cognito is not found!');
+      }
+
+    });
+  </script>
+</head>
+<pre>
+
+<body>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="key"/><br />
+    <input type="hidden" name="X-Amz-Credential"/>
+    <input type="hidden" name="X-Amz-Algorithm"/>
+    <input type="hidden" name="X-Amz-Date"/>
+    <input type="hidden" name="x-amz-security-token"/>
+    <input type="hidden" name="Policy"/>
+    <input type="hidden" name="X-Amz-Signature"/>
+    <input type="file" name="file"/> <br />
+    <input type="submit" name="submit" value="Upload"/>
+  </form>
+</body>
+
+</html>
