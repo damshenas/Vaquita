@@ -3,8 +3,11 @@ from aws_cdk import (
     aws_s3_notifications as _s3notification,
     aws_s3 as _s3,
     aws_cognito as _cognito,
-    aws_cloudfront as _cloudFront,
+    # aws_cloudfront as _cloudFront,
+    aws_elasticsearch as _esearch,
     aws_apigateway as _apigw,
+    aws_iam as _iam,
+    # aws_ec2 as _ec2,
     core
 )
 
@@ -56,7 +59,7 @@ class VaquitaStack(core.Stack):
             auto_verify={"email": True},
             self_sign_up_enabled=True)
 
-        userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
+        self.userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
             supported_identity_providers=["COGNITO"],
             allowed_o_auth_flows=["implicit"],
             allowed_o_auth_scopes=["phone", "email", "openid", "profile"],
@@ -65,7 +68,7 @@ class VaquitaStack(core.Stack):
             allowed_o_auth_flows_user_pool_client=True,
             explicit_auth_flows=["ALLOW_REFRESH_TOKEN_AUTH"])
 
-        userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
+        self.userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
             user_pool=usersPool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
@@ -118,7 +121,7 @@ class VaquitaStack(core.Stack):
             ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayAuthorizer.ref)
 
         ### image search function
-        imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
+        self.imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
             function_name="VAQUITA_IMAGE_SEARCH",
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
@@ -127,6 +130,33 @@ class VaquitaStack(core.Stack):
         ### API gateway finializing
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
+
+        ### elastic search
+        esearchDocument = _iam.PolicyDocument()
+        esearchStatement = _iam.PolicyStatement(
+            effect=_iam.Effect.ALLOW, 
+            actions=["es:*",]
+        )
+
+        esearchStatement.add_aws_account_principal(core.Aws.ACCOUNT_ID)
+        esearchStatement.add_resources("arn:aws:es:{}:{}:domain/VAQUITA_ELASTIC_SEARCH/*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID))
+        esearchDocument.add_statements(esearchStatement)
+
+        self.elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
+            domain_name="vaquita-elastic-search",
+            elasticsearch_version="7.4",
+            access_policies=esearchDocument,
+            elasticsearch_cluster_config={
+                "InstanceCount": "1",
+                "InstanceType": "t2.small.elasticsearch",
+                "DedicatedMasterEnabled": False,
+                "zoneAwarenessEnabled": False,
+                },
+            ebs_options={
+                "ebsEnabled": True, 
+                "volumeSize": 10
+                }
+            )
 
         ### cloud front
         # _cloudFront.CloudFrontWebDistribution(self, "VAQUITA_CLOUDFRONT",

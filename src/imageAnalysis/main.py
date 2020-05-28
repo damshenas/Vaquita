@@ -32,7 +32,7 @@ rek_client = boto3.client('rekognition')
 # logger.info("{}".format(es.info()))
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     """Lambda Function entrypoint handler
 
     :event: S3 Put event
