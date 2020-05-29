@@ -51,7 +51,7 @@ class VaquitaStack(core.Stack):
         esearchStatement.add_resources("arn:aws:es:{}:{}:domain/VAQUITA_ELASTIC_SEARCH/*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID))
         esearchDocument.add_statements(esearchStatement)
 
-        self.elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
+        elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
             elasticsearch_version="2.3",
             access_policies=esearchDocument,
             elasticsearch_cluster_config={
@@ -173,13 +173,32 @@ class VaquitaStack(core.Stack):
         imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
             function_name="VAQUITA_IMAGE_ANALYSIS",
             runtime=_lambda.Runtime.PYTHON_3_7,
-            environment={"VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name},
+            environment={
+                "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
+                "REGION": core.Aws.REGION,
+                # "ES_HOST": elasticSearch.domain_name
+                },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis")) 
 
         imageAnalyzerFunction.add_event_source(_lambda_event_source.SqsEventSource(queue=imageQueue, batch_size=10))
         imageQueue.grant_consume_messages(imageMassageFunction)
 
+        lambda_rekognition_access = _iam.PolicyStatement(
+            effect=_iam.Effect.ALLOW, 
+            actions=["rekognition:DetectLabels"],
+            resources=["*"]                    
+        )
+
+        imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
+        imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
+
+        # const statement = new iam.PolicyStatement();
+        # statement.addActions("lambda:InvokeFunction");
+        # statement.addResources("*");
+
+        # lambda.addToRolePolicy(statement); 
+        
         ### image search function
         self.imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
             function_name="VAQUITA_IMAGE_SEARCH",

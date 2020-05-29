@@ -5,7 +5,8 @@ import hashlib
 import json
 import botocore
 
-logger = logging.getLogger()
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger('Main_Logger')
 
 def handler(event, context):
     s3 = boto3.resource('s3')
