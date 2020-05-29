@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError
 
 def handler(event, context):
     uniquehash = hashlib.sha1("{}".format(time.time_ns()).encode('utf-8')).hexdigest()
-    result = create_presigned_post(os.environ['image_bucket_name'], uniquehash)
+    result = create_presigned_post(os.environ['VAQUITA_IMAGES_BUCKET'], "new/{}/{}".format(uniquehash[:2],uniquehash))
 
     return {
         'statusCode': 200,

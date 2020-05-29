@@ -1,8 +1,10 @@
 from aws_cdk import (
     aws_lambda as _lambda,
     aws_s3_notifications as _s3notification,
+    aws_lambda_event_sources as _lambda_event_source,
     aws_s3 as _s3,
     aws_cognito as _cognito,
+    aws_sqs as _sqs,
     # aws_cloudfront as _cloudFront,
     aws_elasticsearch as _esearch,
     aws_apigateway as _apigw,
@@ -23,11 +25,46 @@ class VaquitaStack(core.Stack):
         ### S3 core
         imagesS3Bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
 
+        ### SQS core
+        imageDeadletterQueue = _sqs.Queue(self, "VAQUITA_IMAGES_DEADLETTER_QUEUE")
+        imageQueue = _sqs.Queue(self, "VAQUITA_IMAGES_QUEUE",
+            dead_letter_queue={
+                "max_receive_count": 3,
+                "queue": imageDeadletterQueue
+            })
+
         ### api gateway core
         apiGateway = _apigw.RestApi(self, 'VAQUITA_API_GATEWAY', rest_api_name='VaquitaApiGateway')
         apiGatewayResource = apiGateway.root.add_resource('vaquita')
         apiGatewayLandingPageResource = apiGatewayResource.add_resource('web')
         apiGatewayGetSignedUrlResource = apiGatewayResource.add_resource('signedUrl')
+
+
+        ### elastic search
+        esearchDocument = _iam.PolicyDocument()
+        esearchStatement = _iam.PolicyStatement(
+            effect=_iam.Effect.ALLOW, 
+            actions=["es:*",]
+        )
+
+        esearchStatement.add_aws_account_principal(core.Aws.ACCOUNT_ID)
+        esearchStatement.add_resources("arn:aws:es:{}:{}:domain/VAQUITA_ELASTIC_SEARCH/*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID))
+        esearchDocument.add_statements(esearchStatement)
+
+        self.elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
+            elasticsearch_version="2.3",
+            access_policies=esearchDocument,
+            elasticsearch_cluster_config={
+                "InstanceCount": "1",
+                "InstanceType": "t2.micro.elasticsearch",
+                "DedicatedMasterEnabled": False,
+                "zoneAwarenessEnabled": False,
+                },
+            ebs_options={
+                "ebsEnabled": True, 
+                "volumeSize": 10
+                }
+            )
 
         ### landing page function
         getLandingPageFunction = _lambda.Function(self, "VAQUITA_GET_LANDING_PAGE",
@@ -82,7 +119,7 @@ class VaquitaStack(core.Stack):
         ### get signed URL function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
             function_name="VAQUITA_GET_SIGNED_URL",
-            environment={"image_bucket_name": imagesS3Bucket.bucket_name},
+            environment={"VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name},
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/getSignedUrl"))
@@ -97,18 +134,6 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        imagesS3Bucket.grant_put(getSignedUrlFunction)
-
-        ### image analyer function
-        imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
-            function_name="VAQUITA_IMAGE_ANALYSIS",
-            runtime=_lambda.Runtime.PYTHON_3_7,
-            handler="main.handler",
-            code=_lambda.Code.asset("./src/imageAnalysis"))
-
-        newImageAddedNotification = _s3notification.LambdaDestination(imageAnalyzerFunction)
-        imagesS3Bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, newImageAddedNotification)
-
         apiGatewayGetSignedUrlResource.add_method('GET', geySignedUrlIntegration,
             authorization_type=_apigw.AuthorizationType.COGNITO,
             # authorizer= {"authorizerId": apiGatewayAuthorizer.ref},
@@ -120,6 +145,41 @@ class VaquitaStack(core.Stack):
             }]
             ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayAuthorizer.ref)
 
+        imagesS3Bucket.grant_put(getSignedUrlFunction, objects_key_pattern="new/*")
+
+        ### image massage function
+        imageMassageFunction = _lambda.Function(self, "VAQUITA_IMAGE_MASSAGE",
+            function_name="VAQUITA_IMAGE_MASSAGE",
+            timeout=core.Duration.seconds(6),
+            runtime=_lambda.Runtime.PYTHON_3_7,
+            environment={"VAQUITA_IMAGE_MASSAGE": imageQueue.queue_name},
+            handler="main.handler",
+            code=_lambda.Code.asset("./src/imageMassage"))
+
+        imagesS3Bucket.grant_write(imageMassageFunction, "processed/*")
+        imagesS3Bucket.grant_delete(imageMassageFunction, "new/*")
+        imagesS3Bucket.grant_read(imageMassageFunction, "new/*")
+        
+        newImageAddedNotification = _s3notification.LambdaDestination(imageMassageFunction)
+
+        imagesS3Bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, 
+            newImageAddedNotification, 
+            _s3.NotificationKeyFilter(prefix="new/")
+            )
+
+        imageQueue.grant_send_messages(imageMassageFunction)
+
+        ### image analyzer function
+        imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
+            function_name="VAQUITA_IMAGE_ANALYSIS",
+            runtime=_lambda.Runtime.PYTHON_3_7,
+            environment={"VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name},
+            handler="main.handler",
+            code=_lambda.Code.asset("./src/imageAnalysis")) 
+
+        imageAnalyzerFunction.add_event_source(_lambda_event_source.SqsEventSource(queue=imageQueue, batch_size=10))
+        imageQueue.grant_consume_messages(imageMassageFunction)
+
         ### image search function
         self.imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
             function_name="VAQUITA_IMAGE_SEARCH",
@@ -130,33 +190,6 @@ class VaquitaStack(core.Stack):
         ### API gateway finializing
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
-
-        ### elastic search
-        esearchDocument = _iam.PolicyDocument()
-        esearchStatement = _iam.PolicyStatement(
-            effect=_iam.Effect.ALLOW, 
-            actions=["es:*",]
-        )
-
-        esearchStatement.add_aws_account_principal(core.Aws.ACCOUNT_ID)
-        esearchStatement.add_resources("arn:aws:es:{}:{}:domain/VAQUITA_ELASTIC_SEARCH/*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID))
-        esearchDocument.add_statements(esearchStatement)
-
-        self.elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
-            domain_name="vaquita-elastic-search",
-            elasticsearch_version="7.4",
-            access_policies=esearchDocument,
-            elasticsearch_cluster_config={
-                "InstanceCount": "1",
-                "InstanceType": "t2.small.elasticsearch",
-                "DedicatedMasterEnabled": False,
-                "zoneAwarenessEnabled": False,
-                },
-            ebs_options={
-                "ebsEnabled": True, 
-                "volumeSize": 10
-                }
-            )
 
         ### cloud front
         # _cloudFront.CloudFrontWebDistribution(self, "VAQUITA_CLOUDFRONT",
