@@ -173,10 +173,12 @@ class VaquitaStack(core.Stack):
         imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
             function_name="VAQUITA_IMAGE_ANALYSIS",
             runtime=_lambda.Runtime.PYTHON_3_7,
+            timeout=core.Duration.seconds(10),
             environment={
                 "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
                 "REGION": core.Aws.REGION,
-                # "ES_HOST": elasticSearch.domain_name
+                "ES_HOST": elasticSearch.attr_domain_endpoint,
+                "ES_INDEX": "images"
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis")) 
@@ -186,18 +188,19 @@ class VaquitaStack(core.Stack):
 
         lambda_rekognition_access = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
-            actions=["rekognition:DetectLabels"],
+            actions=["rekognition:DetectLabels", "rekognition:DetectModerationLabels"],
             resources=["*"]                    
         )
 
+        lambda_elasticsearch_access = _iam.PolicyStatement(
+            effect=_iam.Effect.ALLOW, 
+            actions=["es:ESHttp*"],
+            resources=["*"] #tbc [elasticSearch.attr_arn]              
+        ) 
+
         imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
+        imageAnalyzerFunction.add_to_role_policy(lambda_elasticsearch_access)
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
-
-        # const statement = new iam.PolicyStatement();
-        # statement.addActions("lambda:InvokeFunction");
-        # statement.addResources("*");
-
-        # lambda.addToRolePolicy(statement); 
         
         ### image search function
         self.imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",

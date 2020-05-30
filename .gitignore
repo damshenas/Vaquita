@@ -2,7 +2,7 @@
 package-lock.json
 .pytest_cache
 *.egg-info
-DS_Store
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -21,3 +21,6 @@ venv.bak/
 # CDK Context & Staging files
 .cdk.staging/
 cdk.out/
+
+# requirements
+assets

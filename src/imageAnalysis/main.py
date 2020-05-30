@@ -1,67 +1,107 @@
 import boto3
 import os
 import logging
+import sys
 import json
 
-# logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-# logger = logging.getLogger('Main_Logger')
+script_path = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, "{}/assets".format(script_path))
+
+from elasticsearch import Elasticsearch, RequestsHttpConnection
+from requests_aws4auth import AWS4Auth
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# from elasticsearch import Elasticsearch, RequestsHttpConnection
-# from aws_requests_auth.aws_auth import AWSRequestsAuth
+es_region =  os.getenv('REGION')
+es_host = os.getenv('ES_HOST')
+es_index = os.getenv('ES_INDEX')
 
-es_host = os.getenv('ELASTICSEARCH_URL')
-es_index = 'images'
+service = 'es'
+credentials = boto3.Session().get_credentials()
+awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, es_region, service, session_token=credentials.token)
 
-## Establish connection to ElasticSearch
-# auth = AWSRequestsAuth(aws_access_key=access_key,
-#                        aws_secret_access_key=secret_access_key,
-#                        aws_token=session_token,
-#                        aws_host=es_host,
-#                        aws_region=region,
-#                        aws_service='es')
+es = Elasticsearch(
+    hosts = [{'host': es_host, 'port': 443}],
+    http_auth = awsauth,
+    use_ssl = True,
+    verify_certs = True,
+    connection_class = RequestsHttpConnection
+)
 
-# es = Elasticsearch(host=es_host,
-#                    port=443,
-#                    use_ssl=True,
-#                    connection_class=RequestsHttpConnection,
-#                    http_auth=auth)
-
-# logger.info("{}".format(es.info()))
-
+logger.info("Elasticsearch Connected: {}".format(es.info()))
 
 def handler(event, context):
-    rekognition = boto3.client('rekognition', os.environ['REGION'])
+    rekognition = boto3.client('rekognition', es_region)
 
     for record in event['Records']:
-        receiptHandle = record['receiptHandle']
+        # receiptHandle = record['receiptHandle']
         body = record['body']
         message = json.loads(body)
 
         bucket = os.environ['VAQUITA_IMAGES_BUCKET']
         key = message['image']
-        last_modified = message['last_modified']
-        etag = message['etag']
+        # original_key = message['original_key']
+        # original_last_modified = message['original_last_modified']
+        # etag = message['etag']
 
         logger.info('Processing {}.'.format(key))
 
-        rekognition_response = rekognition.detect_labels(
+        detected_labels = rekognition.detect_labels(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}},
             MaxLabels=10,
             MinConfidence=80)
             
-        labels = []
-        for l in rekognition_response['Labels']:
-            labels.append(l['Name'])
-        
-        logger.info('Detected labels: {}'.format(labels))
-        # res = es.index(index=es_index, doc_type='event',
-        #                id=key, body={'labels': labels})
+        detected_unsafe_contents = rekognition.detect_moderation_labels(
+            Image={'S3Object': {'Bucket': bucket, 'Name': key}})
+               
+        object_labels = []
 
-        # logger.debug(res)
-        # logger.info("Message {} has been sent.".format(response.get('MessageId')))
-        logger.info('Image is indexed')
+        for l in detected_labels['Labels']:
+            object_labels.append(l['Name']) # add objects in image
+
+        for l in detected_unsafe_contents['ModerationLabels']:
+            object_labels.append(l['Name'])
+            object_labels.append("offensive") #label image as offensive
+
+        es_body = {
+                'labels': object_labels,
+                'offensive': True if "offensive" in object_labels else False
+            }
+
+        try:
+            es.index(index=es_index, doc_type='post', id=key.split("/")[-1], body=es_body)
+        except Exception as e:
+            print('Unable to load data into es:', e)
+            print("Data: ", es_body)
+
+
+        print('id', es.get(index=es_index, id='e223eef804dcad71dd58d7e088bf0a1b6d88616b', ignore=[400, 404]))
+
+        print('index_label_people', es.search(index=es_index, body={
+            'query': {
+                'match': {
+                'labels': 'People',
+                }
+            }
+        }, ignore=[400, 404]))
+
+        print('index_label_offensive', es.search(index=es_index, body={
+            'query': {
+                'match': {
+                'labels': 'offensive',
+                }
+            }
+        }, ignore=[400, 404]))
+
+        print('index_offensive_true', es.search(index=es_index, body={
+            'query': {
+                'match': {
+                'offensive': True,
+                }
+            }
+        }, ignore=[400, 404]))
+
+        logger.info("Image is indexed: {}".format(es_body))
 
     return True

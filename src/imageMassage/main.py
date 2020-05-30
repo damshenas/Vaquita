@@ -5,8 +5,8 @@ import hashlib
 import json
 import botocore
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger('Main_Logger')
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 def handler(event, context):
     s3 = boto3.resource('s3')
@@ -32,7 +32,8 @@ def handler(event, context):
         # add to the queue
         message = json.dumps({
             "image": processedKey,
-            "last_modified": newKeyObj.last_modified,
+            "original_key": newKey,
+            "original_last_modified": newKeyObj.last_modified,
             "etag": newKeyObj.e_tag
         }, default=str)
 
