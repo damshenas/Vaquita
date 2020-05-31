@@ -75,33 +75,6 @@ def handler(event, context):
             print('Unable to load data into es:', e)
             print("Data: ", es_body)
 
-
-        print('id', es.get(index=es_index, id='e223eef804dcad71dd58d7e088bf0a1b6d88616b', ignore=[400, 404]))
-
-        print('index_label_people', es.search(index=es_index, body={
-            'query': {
-                'match': {
-                'labels': 'People',
-                }
-            }
-        }, ignore=[400, 404]))
-
-        print('index_label_offensive', es.search(index=es_index, body={
-            'query': {
-                'match': {
-                'labels': 'offensive',
-                }
-            }
-        }, ignore=[400, 404]))
-
-        print('index_offensive_true', es.search(index=es_index, body={
-            'query': {
-                'match': {
-                'offensive': True,
-                }
-            }
-        }, ignore=[400, 404]))
-
         logger.info("Image is indexed: {}".format(es_body))
 
     return True

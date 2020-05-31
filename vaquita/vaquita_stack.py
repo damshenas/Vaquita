@@ -38,7 +38,7 @@ class VaquitaStack(core.Stack):
         apiGatewayResource = apiGateway.root.add_resource('vaquita')
         apiGatewayLandingPageResource = apiGatewayResource.add_resource('web')
         apiGatewayGetSignedUrlResource = apiGatewayResource.add_resource('signedUrl')
-
+        apiGatewayImageSearchResource = apiGatewayResource.add_resource('search')
 
         ### elastic search
         esearchDocument = _iam.PolicyDocument()
@@ -73,7 +73,7 @@ class VaquitaStack(core.Stack):
             handler="main.handler",
             code=_lambda.Code.asset("./src/landingPage"))
 
-        geyLandingPageIntegration = _apigw.LambdaIntegration(
+        getLandingPageIntegration = _apigw.LambdaIntegration(
             getLandingPageFunction, 
             proxy=True, 
             integration_responses=[{
@@ -83,7 +83,7 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        apiGatewayLandingPageResource.add_method('GET', geyLandingPageIntegration,
+        apiGatewayLandingPageResource.add_method('GET', getLandingPageIntegration,
             method_responses=[{
                 'statusCode': '200',
                 'responseParameters': {
@@ -109,13 +109,6 @@ class VaquitaStack(core.Stack):
             user_pool=usersPool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
-        apiGatewayAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_AUTHORIZER",
-            rest_api_id=apiGatewayGetSignedUrlResource.rest_api.rest_api_id,
-            name="VAQUITA_API_GATEWAY_AUTHORIZER",
-            type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
-            identity_source="method.request.header.Authorization",
-            provider_arns=[usersPool.user_pool_arn])
-
         ### get signed URL function
         getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
             function_name="VAQUITA_GET_SIGNED_URL",
@@ -124,7 +117,7 @@ class VaquitaStack(core.Stack):
             handler="main.handler",
             code=_lambda.Code.asset("./src/getSignedUrl"))
 
-        geySignedUrlIntegration = _apigw.LambdaIntegration(
+        getSignedUrlIntegration = _apigw.LambdaIntegration(
             getSignedUrlFunction, 
             proxy=True, 
             integration_responses=[{
@@ -134,16 +127,22 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        apiGatewayGetSignedUrlResource.add_method('GET', geySignedUrlIntegration,
+        apiGatewayGetSignedUrlAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
+            rest_api_id=apiGatewayGetSignedUrlResource.rest_api.rest_api_id,
+            name="VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
+            type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
+            identity_source="method.request.header.Authorization",
+            provider_arns=[usersPool.user_pool_arn])
+
+        apiGatewayGetSignedUrlResource.add_method('GET', getSignedUrlIntegration,
             authorization_type=_apigw.AuthorizationType.COGNITO,
-            # authorizer= {"authorizerId": apiGatewayAuthorizer.ref},
             method_responses=[{
                 'statusCode': '200',
                 'responseParameters': {
                     'method.response.header.Access-Control-Allow-Origin': True,
                 }
             }]
-            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayAuthorizer.ref)
+            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayGetSignedUrlAuthorizer.ref)
 
         imagesS3Bucket.grant_put(getSignedUrlFunction, objects_key_pattern="new/*")
 
@@ -203,17 +202,61 @@ class VaquitaStack(core.Stack):
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
         
         ### image search function
-        self.imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
+        imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
             function_name="VAQUITA_IMAGE_SEARCH",
             runtime=_lambda.Runtime.PYTHON_3_7,
+            timeout=core.Duration.seconds(10),
+            environment={
+                "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
+                "REGION": core.Aws.REGION,
+                "ES_HOST": elasticSearch.attr_domain_endpoint,
+                "ES_INDEX": "images"
+                },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageSearch"))
+
+        imageSearchIntegration = _apigw.LambdaIntegration(
+            imageSearchFunction, 
+            proxy=True, 
+            integration_responses=[{
+                'statusCode': '200',
+               'responseParameters': {
+                   'method.response.header.Access-Control-Allow-Origin': "'*'",
+                }
+            }])
+
+        apiGatewayImageSearchAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+            rest_api_id=apiGatewayImageSearchResource.rest_api.rest_api_id,
+            name="VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+            type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
+            identity_source="method.request.header.Authorization",
+            provider_arns=[usersPool.user_pool_arn])
+
+        apiGatewayImageSearchResource.add_method('GET', imageSearchIntegration,
+            authorization_type=_apigw.AuthorizationType.COGNITO,
+            method_responses=[{
+                'statusCode': '200',
+                'responseParameters': {
+                    'method.response.header.Access-Control-Allow-Origin': True,
+                }
+            }]
+            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayImageSearchAuthorizer.ref)
+
+
+        lambda_elasticsearch_access = _iam.PolicyStatement(
+            effect=_iam.Effect.ALLOW, 
+            actions=["es:ESHttp*"],
+            resources=["*"] #tbc [elasticSearch.attr_arn]              
+        ) 
+
+        imageAnalyzerFunction.add_to_role_policy(lambda_elasticsearch_access)
 
         ### API gateway finializing
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
+        self.add_cors_options(apiGatewayImageSearchResource)
 
-        ### cloud front
+        ### cloud front tbc
         # _cloudFront.CloudFrontWebDistribution(self, "VAQUITA_CLOUDFRONT",
         #                         price_class=_cloudFront.PriceClass.PRICE_CLASS_100,
         #                         origin_configs=[
