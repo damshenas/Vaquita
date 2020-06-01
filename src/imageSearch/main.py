@@ -4,7 +4,6 @@ import os
 import logging
 import sys
 import json
-
 from botocore.exceptions import ClientError
 
 script_path = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +34,13 @@ es = Elasticsearch(
 logger.info("Elasticsearch Connected: {}".format(es.info()))
 
 def handler(event, context):
+
+    # get language
+    # get region
+    # get term
+
+    # search by label
+
     return {
         'statusCode': 200,
         'headers': {
@@ -42,11 +48,6 @@ def handler(event, context):
         },
         'body': 'HELLO'
     }
-
-def searchById(id):
-    result = es.get(index=es_index, id=id)
-    logger.info('Found result for id {}: {}'.format(id, result))
-    return result
 
 def searchByLabel(label, value):
     result = es.search(index=es_index, body={
@@ -57,4 +58,9 @@ def searchByLabel(label, value):
                 }
             })
     logger.info('Found result for label {} and value {}: {}'.format(label, value, result))
+    return result
+
+def searchById(id):
+    result = es.get(index=es_index, id=id)
+    logger.info('Found result for id {}: {}'.format(id, result))
     return result
