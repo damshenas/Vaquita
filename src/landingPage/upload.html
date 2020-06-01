@@ -108,15 +108,23 @@
       evt.currentTarget.className += " active";
     }
 
-
-
-
     function submitFileUpload(element) {
+      event.preventDefault();    
 
       console.log('Uploading ...');
 
-      event.preventDefault();    
-      var formData = new FormData(element);
+      var formData = new FormData();
+      var selectedFile = $('input[name="file"]')[0]
+
+      $('#upload_image_form *').filter(':input').filter(":hidden").each(function(k, v){
+        formData.append(v.name, v.defaultValue);
+      });
+
+      formData.append("file", selectedFile.files[0]); 
+
+      for (var [key, value] of formData.entries()) { 
+        console.log(key, value);
+      }
 
       $.ajax({
           url: $("#upload_image_form").attr('action'),
@@ -124,7 +132,7 @@
           data: formData,
           success: function (data) {
               alert('File is successfully uploaded.');
-              location.reload();
+              getSignedUrl();
           },
           cache: false,
           contentType: false,
@@ -132,7 +140,6 @@
       });
 
       // alert('Upload has been completed.');
-      // getSignedUrl();
     };
 
   </script>
@@ -162,6 +169,7 @@
         <input type="file" name="file"/> <br />
         <input type="submit" class="submit" value="Upload" onclick="submitFileUpload()"/>
       </form>
+      <p id="uplaod_result"></p>
     </div>
     
     <div id="search" class="tabcontent">
