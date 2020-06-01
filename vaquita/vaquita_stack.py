@@ -250,7 +250,7 @@ class VaquitaStack(core.Stack):
 
         lambda_elasticsearch_access_search = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
-            actions=["es:ESHttp*"],
+            actions=["es:ESHttp*", "translate:TranslateText"],
             resources=["*"] #tbc [elasticSearch.attr_arn]              
         ) 
 

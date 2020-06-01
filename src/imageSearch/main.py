@@ -41,7 +41,12 @@ def handler(event, context):
         params[key] = value
         
     # do something for other languages
-    
+
+    if 'language' in params and params['language'] != 'en':
+        translated_label = translate(params['language'], params['label'])
+        logger.info("Translated label {} ({}) to {} (en).".format(params['label'], params['language'], translated_label))
+        params['label'] = translated_label
+
     if 'offensive' in params:
         es_response = searchByLabel('offensive', True)
     elif 'label' in params:
@@ -82,3 +87,9 @@ def searchById(id):
     result = es.get(index=es_index, id=id)
     logger.info('Found result for id {}: {}'.format(id, result))
     return result
+
+def translate(language, word):
+    translate = boto3.client(service_name='translate', region_name=es_region, use_ssl=True)
+    result = translate.translate_text(Text=word, SourceLanguageCode=language, TargetLanguageCode="en")
+
+    return result.get('TranslatedText')

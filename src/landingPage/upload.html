@@ -85,8 +85,8 @@
       // });
 
       var formData = {
-            'language': $('input[name=language]').val(),
-            'country': $('input[name=country]').val(),
+            'language': $('#language').val(),
+            'country': $('#country').val(),
             'label': $('input[name=label]').val()
       };
 
@@ -213,9 +213,18 @@
       
       <form id="search_image_form" method="post">
         <label >Language:</label>
-        <input type="text" name="language" value="EN"/><br />
+        <select name="language" id="language">
+          <option value="en">English</option>
+          <option value="tr">Turkish</option>
+          <option value="nl">Dutch</option>
+        </select>
+        <br />
         <label >Country:</label>
-        <input type="text" name="country" value="NL"/><br />
+        <select name="country" id="country">
+          <option value="nl">Netherlands</option>
+        </select>
+        <br />
+
         <label >Label to search:</label>
         <input type="text" name="label"/><br />
         <input class="submit" type="submit" value="Search" onclick="submitSearchQuery()"/>
