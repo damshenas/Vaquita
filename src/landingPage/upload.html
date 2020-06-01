@@ -9,13 +9,15 @@
   </style>
   <script src="https://code.jquery.com/jquery-1.9.1.min.js"></script>
   <script>
-    // $("#default_tab").click();
     var authData = window.location.hash.substring(1);
     var idToken = authData.split('&').find((rec) => rec.split('=')[0] == 'id_token').split('=')[1]
     var getSignedUrlEndpoint = window.location.href.split('#')[0].replace('web', 'signedUrl')
     var searchImageEndpoint = window.location.href.split('#')[0].replace('web', 'search')
 
     function getSignedUrl() {
+      $("#uplaod_result").text('');
+      $("#uplaod_result").css("color", "black");
+
       $.ajax({
           url: getSignedUrlEndpoint,
           headers: { 'Authorization': idToken },
@@ -39,33 +41,11 @@
     }
 
     $(document).ready(function () {
-
       if (window.location.hash) {
         getSignedUrl();
       } else {
         console.log('Authorization information from cognito is not found!');
       }
-
-    // $("form").submit(function(e) {
-    //   console.log('Uploading ...');
-
-    //   e.preventDefault();    
-    //   var formData = new FormData(this);
-
-    //   $.ajax({
-    //       url: $("#upload_image_form").attr('action'),
-    //       type: 'POST',
-    //       data: formData,
-    //       success: function (data) {
-    //           alert('File is successfully uploaded.');
-    //           location.reload();
-    //       },
-    //       cache: false,
-    //       contentType: false,
-    //       processData: false
-    //   });
-    // });
-
     });
 
     function submitSearchQuery() {
@@ -95,6 +75,10 @@
     }
 
     function openTab(evt, tabName) {
+      if (tabName == 'upload') {
+        getSignedUrl();
+      }
+
       var i, tabcontent, tablinks;
       tabcontent = document.getElementsByClassName("tabcontent");
       for (i = 0; i < tabcontent.length; i++) {
@@ -111,8 +95,6 @@
     function submitFileUpload(element) {
       event.preventDefault();    
 
-      console.log('Uploading ...');
-
       var formData = new FormData();
       var selectedFile = $('input[name="file"]')[0]
 
@@ -122,24 +104,26 @@
 
       formData.append("file", selectedFile.files[0]); 
 
-      for (var [key, value] of formData.entries()) { 
-        console.log(key, value);
-      }
-
       $.ajax({
           url: $("#upload_image_form").attr('action'),
           type: 'POST',
           data: formData,
           success: function (data) {
-              alert('File is successfully uploaded.');
-              getSignedUrl();
+            $("#uplaod_result").text('The file has been sucessfully uploaded!');
+            $("#uplaod_result").css("color", "green");
+            getSignedUrl();
+          },
+          error: function(xhr, textStatus, errorThrown){
+            $("#uplaod_result").text('The file upload failed!');
+            $("#uplaod_result").css("color", "red");
+            console.log(textStatus);
+            console.log(errorThrown);
           },
           cache: false,
           contentType: false,
           processData: false
       });
 
-      // alert('Upload has been completed.');
     };
 
   </script>
@@ -188,7 +172,6 @@
       <br />
     
       <h1 id="search_image_result"></div>
-    
     </div>
   </div>
 
