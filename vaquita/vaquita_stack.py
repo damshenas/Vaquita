@@ -25,6 +25,11 @@ class VaquitaStack(core.Stack):
         ### S3 core
         imagesS3Bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
 
+        imagesS3Bucket.add_cors_rule(
+            allowed_methods=[_s3.HttpMethods.POST],
+            allowed_origins=["*"] # add API gateway web resource URL
+        )
+
         ### SQS core
         imageDeadletterQueue = _sqs.Queue(self, "VAQUITA_IMAGES_DEADLETTER_QUEUE")
         imageQueue = _sqs.Queue(self, "VAQUITA_IMAGES_QUEUE",
