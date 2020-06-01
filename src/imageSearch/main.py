@@ -45,7 +45,7 @@ def handler(event, context):
     if 'offensive' in params:
         es_response = searchByLabel('offensive', True)
     elif 'label' in params:
-        es_response = searchByLabel('label', params['label'])
+        es_response = searchByLabel('labels', params['label'])
     
     count = es_response['hits']['total']
     results = es_response['hits']['hits']
@@ -71,7 +71,7 @@ def searchByLabel(label, value):
     result = es.search(index=es_index, body={
                 'query': {
                     'match': {
-                    label: value,
+                        label: value,
                     }
                 }
             })
