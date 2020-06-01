@@ -196,14 +196,14 @@ class VaquitaStack(core.Stack):
             resources=["*"]                    
         )
 
-        lambda_elasticsearch_access = _iam.PolicyStatement(
+        lambda_elasticsearch_access_analyzer = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
             actions=["es:ESHttp*"],
             resources=["*"] #tbc [elasticSearch.attr_arn]              
         ) 
 
         imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
-        imageAnalyzerFunction.add_to_role_policy(lambda_elasticsearch_access)
+        imageAnalyzerFunction.add_to_role_policy(lambda_elasticsearch_access_analyzer)
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
         
         ### image search function
@@ -237,7 +237,7 @@ class VaquitaStack(core.Stack):
             identity_source="method.request.header.Authorization",
             provider_arns=[usersPool.user_pool_arn])
 
-        apiGatewayImageSearchResource.add_method('GET', imageSearchIntegration,
+        apiGatewayImageSearchResource.add_method('POST', imageSearchIntegration,
             authorization_type=_apigw.AuthorizationType.COGNITO,
             method_responses=[{
                 'statusCode': '200',
@@ -248,15 +248,15 @@ class VaquitaStack(core.Stack):
             ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayImageSearchAuthorizer.ref)
 
 
-        lambda_elasticsearch_access = _iam.PolicyStatement(
+        lambda_elasticsearch_access_search = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
             actions=["es:ESHttp*"],
             resources=["*"] #tbc [elasticSearch.attr_arn]              
         ) 
 
-        imageAnalyzerFunction.add_to_role_policy(lambda_elasticsearch_access)
+        imageSearchFunction.add_to_role_policy(lambda_elasticsearch_access_search)
 
-        ### API gateway finializing
+        ### API gateway finalizing
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
         self.add_cors_options(apiGatewayImageSearchResource)

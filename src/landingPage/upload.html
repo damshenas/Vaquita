@@ -15,8 +15,8 @@
     var searchImageEndpoint = window.location.href.split('#')[0].replace('web', 'search')
 
     function getSignedUrl() {
-      $("#uplaod_result").text('');
-      $("#uplaod_result").css("color", "black");
+      $("#upload_result").text('');
+      $("#upload_result").css("color", "black");
 
       $.ajax({
           url: getSignedUrlEndpoint,
@@ -40,6 +40,34 @@
         });
     }
 
+    function getOffensivePhotosReport() {
+
+      var formData = {
+            'offensive': 'true'
+      };
+
+      $.ajax({
+        url: 'https://5kcl2f8eb1.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint,
+        headers: { 'Authorization': idToken },
+        type: "POST",
+        data: formData,
+        contentType: 'application/json; charset=utf-8',
+        success: function (results) {
+          console.log(results);
+          if (results) {
+            $('#report_image_result').append('<p>' + 'Image ID' + ': ' + 'Detected Labels' + '</p>')              
+            results.forEach(item => {
+              $('#report_image_result').append('<p>' + item.id + ': ' + JSON.stringify(item.labels) + '</p>')              
+            });
+          }
+        },
+        error: function (error) {
+          console.log(error);
+        }
+      });
+
+    }
+
     $(document).ready(function () {
       if (window.location.hash) {
         getSignedUrl();
@@ -49,18 +77,26 @@
     });
 
     function submitSearchQuery() {
-      var postForm = {
+      event.preventDefault();    
+
+      // var formData = new FormData();
+      // $('#search_image_form *').filter(':input').filter(":text").each(function(k, v){
+      //   formData.append(v.name, v.defaultValue);
+      // });
+
+      var formData = {
             'language': $('input[name=language]').val(),
             'country': $('input[name=country]').val(),
             'label': $('input[name=label]').val()
       };
 
+      console.log('searching');
+
       $.ajax({
-        url: searchImageEndpoint,
+        url: 'https://5kcl2f8eb1.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint,
         headers: { 'Authorization': idToken },
         type: "POST",
-        data: postForm,
-        dataType : 'json',
+        data: formData,
         contentType: 'application/json; charset=utf-8',
         success: function (result) {
           console.log(result);
@@ -71,12 +107,15 @@
         }
       });
 
-      event.preventDefault();
     }
 
     function openTab(evt, tabName) {
       if (tabName == 'upload') {
         getSignedUrl();
+      }
+
+      if (tabName == 'report') {
+        getOffensivePhotosReport();
       }
 
       var i, tabcontent, tablinks;
@@ -92,7 +131,7 @@
       evt.currentTarget.className += " active";
     }
 
-    function submitFileUpload(element) {
+    function submitFileUpload() {
       event.preventDefault();    
 
       var formData = new FormData();
@@ -109,13 +148,13 @@
           type: 'POST',
           data: formData,
           success: function (data) {
-            $("#uplaod_result").text('The file has been sucessfully uploaded!');
-            $("#uplaod_result").css("color", "green");
+            $("#upload_result").text('The file has been successfully uploaded!');
+            $("#upload_result").css("color", "green");
             getSignedUrl();
           },
           error: function(xhr, textStatus, errorThrown){
-            $("#uplaod_result").text('The file upload failed!');
-            $("#uplaod_result").css("color", "red");
+            $("#upload_result").text('The file upload failed!');
+            $("#upload_result").css("color", "red");
             console.log(textStatus);
             console.log(errorThrown);
           },
@@ -136,11 +175,12 @@
     <div class="tab" style="margin-top: 10px;">
       <button class="tablinks" onclick="openTab(event, 'upload')" id="default_tab">Upload</button>
       <button class="tablinks" onclick="openTab(event, 'search')">Search</button>
+      <button class="tablinks" onclick="openTab(event, 'report')">Report</button>
       <button class="tablinks" onclick="" style="float: right;">Logout</button>
     </div>
 
     <div id="upload" class="tabcontent">
-      <h3>Uplaod Image</h3>
+      <h3>Upload Image</h3>
       <p>Select image to upload:</p> 
       <form id="upload_image_form" method="post" enctype="multipart/form-data">
         <input type="hidden" name="key"/><br />
@@ -153,7 +193,7 @@
         <input type="file" name="file"/> <br />
         <input type="submit" class="submit" value="Upload" onclick="submitFileUpload()"/>
       </form>
-      <p id="uplaod_result"></p>
+      <p id="upload_result"></p>
     </div>
     
     <div id="search" class="tabcontent">
@@ -166,15 +206,24 @@
         <input type="text" name="country" value="NL"/><br />
         <label >Label to search:</label>
         <input type="text" name="label"/><br />
-        <input class="submit" type="submit" value="Search" onclick="submitSearchQuery(this)"/>
+        <input class="submit" type="submit" value="Search" onclick="submitSearchQuery()"/>
       </form>
     
       <br />
     
-      <h1 id="search_image_result"></div>
+      <h1 id="search_image_result"></h1>
     </div>
-  </div>
 
+    <div id="report" class="tabcontent">
+      <h3>Report of offensive photos</h3>
+    
+      <div id="report_image_result" style="border: 1px;">
+      </div>
+
+    </div>
+
+  </div>
+  
   <script>
     document.getElementById("default_tab").click();
   </script>

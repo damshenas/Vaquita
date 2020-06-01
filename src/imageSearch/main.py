@@ -34,19 +34,37 @@ es = Elasticsearch(
 logger.info("Elasticsearch Connected: {}".format(es.info()))
 
 def handler(event, context):
+    params = {}
+    
+    for param in event['body'].split('&'):
+        key, value = param.split('=')
+        params[key] = value
+        
+    # do something for other languages
+    
+    if 'offensive' in params:
+        es_response = searchByLabel('offensive', True)
+    elif 'label' in params:
+        es_response = searchByLabel('label', params['label'])
+    
+    count = es_response['hits']['total']
+    results = es_response['hits']['hits']
 
-    # get language
-    # get region
-    # get term
+    response = []
 
-    # search by label
+    for item in results:
+        response.append({
+            'id': item['_id'],
+            'offensive': item['_source']['offensive'],
+            'labels': item['_source']['labels']
+        })
 
     return {
         'statusCode': 200,
         'headers': {
             'Content-Type': 'application/json; charset=UTF-8'
         },
-        'body': 'HELLO'
+        'body': json.dumps(response)
     }
 
 def searchByLabel(label, value):
