@@ -16,9 +16,6 @@
     var searchImageEndpoint = window.location.href.split('#')[0].replace('web', 'search')
 
     function getSignedUrl() {
-      $("#upload_result").text('');
-      $("#upload_result").css("color", "black");
-
       $.ajax({
           url: getSignedUrlEndpoint,
           headers: { 'Authorization': idToken },
@@ -73,7 +70,7 @@
 
     $(document).ready(function () {
       if (window.location.hash) {
-        getSignedUrl();
+        // getSignedUrl();
       } else {
         console.log('Authorization information from cognito is not found!');
       }
@@ -121,6 +118,10 @@
     }
 
     function openTab(evt, tabName) {
+      $("#upload_result").text('');
+      $("#upload_result").css("color", "black");
+      $("#file_select").val('');
+
       if (tabName == 'upload') {
         getSignedUrl();
       }
@@ -153,7 +154,7 @@
       });
 
       formData.append("file", selectedFile.files[0]); 
-
+      
       $.ajax({
           url: $("#upload_image_form").attr('action'),
           type: 'POST',
@@ -201,7 +202,7 @@
         <input type="hidden" name="x-amz-security-token"/>
         <input type="hidden" name="Policy"/>
         <input type="hidden" name="X-Amz-Signature"/>
-        <input type="file" name="file"/> <br />
+        <input type="file" id="file_select" name="file"/> <br />
         <input type="submit" class="submit" value="Upload" onclick="submitFileUpload()"/>
       </form>
       <p id="upload_result"></p>
