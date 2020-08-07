@@ -6,11 +6,8 @@ from aws_cdk import (
     aws_cognito as _cognito,
     aws_sqs as _sqs,
     aws_dynamodb as _dydb,
-    # aws_cloudfront as _cloudFront,
-    # aws_elasticsearch as _esearch,
     aws_apigateway as _apigw,
     aws_iam as _iam,
-    # aws_ec2 as _ec2,
     core
 )
 
@@ -61,32 +58,14 @@ class VaquitaStack(core.Stack):
             removal_policy=core.RemovalPolicy.DESTROY # NOT recommended for production code
         )
 
-
-        ### elastic search
-        # esearchDocument = _iam.PolicyDocument()
-        # esearchStatement = _iam.PolicyStatement(
-        #     effect=_iam.Effect.ALLOW, 
-        #     actions=["es:*",]
-        # )
-
-        # esearchStatement.add_aws_account_principal(core.Aws.ACCOUNT_ID)
-        # esearchStatement.add_resources("arn:aws:es:{}:{}:domain/VAQUITA_ELASTIC_SEARCH/*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID))
-        # esearchDocument.add_statements(esearchStatement)
-
-        # elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
-        #     elasticsearch_version="2.3",
-        #     access_policies=esearchDocument,
-        #     elasticsearch_cluster_config={
-        #         "InstanceCount": "1",
-        #         "InstanceType": "t2.micro.elasticsearch",
-        #         "DedicatedMasterEnabled": False,
-        #         "zoneAwarenessEnabled": False,
-        #         },
-        #     ebs_options={
-        #         "ebsEnabled": True, 
-        #         "volumeSize": 10
-        #         }
-        #     )
+        dynamodb_table.add_global_secondary_index(
+            index_name='VAQUITA_TABLE_LABEL_INDEX',
+            partition_key=_dydb.Attribute(
+                name="label",
+                type=_dydb.AttributeType.STRING
+            ),
+            projection_type=_dydb.ProjectionType.KEYS_ONLY
+        )
 
         ### landing page function
         getLandingPageFunction = _lambda.Function(self, "VAQUITA_GET_LANDING_PAGE",
@@ -271,22 +250,6 @@ class VaquitaStack(core.Stack):
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
         self.add_cors_options(apiGatewayImageSearchResource)
-
-        ### cloud front tbc
-        # _cloudFront.CloudFrontWebDistribution(self, "VAQUITA_CLOUDFRONT",
-        #                         price_class=_cloudFront.PriceClass.PRICE_CLASS_100,
-        #                         origin_configs=[
-        #                             _cloudFront.SourceConfiguration(
-        #                                 behaviors=[
-        #                                     _cloudFront.Behavior(
-        #                                         is_default_behavior=True)
-        #                                 ],
-        #                                 s3_origin_source=_cloudFront.S3OriginConfig(
-        #                                     s3_bucket_source=bucket
-        #                                 )
-        #                             )
-        #                         ]
-        #                         )
 
     def add_cors_options(self, apigw_resource):
         apigw_resource.add_method('OPTIONS', _apigw.MockIntegration(
