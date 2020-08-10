@@ -177,8 +177,7 @@ class VaquitaStack(core.Stack):
             environment={
                 "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
                 "REGION": core.Aws.REGION,
-                "TABLE_NAME": dynamodb_table.table_name,
-                "ES_INDEX": "images"
+                "TABLE_NAME": dynamodb_table.table_name
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis")) 
@@ -204,8 +203,7 @@ class VaquitaStack(core.Stack):
             environment={
                 "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
                 "REGION": core.Aws.REGION,
-                "TABLE_NAME": dynamodb_table.table_name,
-                "ES_INDEX": "images"
+                "TABLE_NAME": dynamodb_table.table_name
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageSearch"))

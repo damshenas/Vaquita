@@ -34,6 +34,7 @@
           },
           error: function (error) {
             console.log(error);
+            // tbc do something if errors like token expired (401) happened
           }
         });
     }
@@ -41,11 +42,11 @@
     function getOffensivePhotosReport() {
 
       var formData = {
-            'offensive': 'true'
+            'label': 'offensive'
       };
 
       $.ajax({
-        url: 'https://5kcl2f8eb1.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint,
+        url: 'https://x15hcgo9mk.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint //tbc needs to be dynamic
         headers: { 'Authorization': idToken },
         type: "POST",
         data: formData,
@@ -55,9 +56,9 @@
           $("#report_image_result tr").remove();
           $("#report_image_result th").remove();
           if (results) {
-            $('#report_image_result').append( '<tr><th>Image ID</th><th>Labels</th></tr>' );
+            $('#report_image_result').append( '<tr><th>Image ID</th></tr>' );
             results.forEach(item => {
-              $('#report_image_result').append( '<tr><td>' + item.id + '</th><th>' + item.labels.join() + '</th></tr>' );
+              $('#report_image_result').append( '<tr><td>' + item.id + '</th></tr>' );
             });
           }
         },
@@ -93,7 +94,7 @@
       console.log('searching');
 
       $.ajax({
-        url: 'https://5kcl2f8eb1.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint,
+        url: 'https://x15hcgo9mk.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint //tbc needs to be dynamic
         headers: { 'Authorization': idToken },
         type: "POST",
         data: formData,
@@ -104,9 +105,9 @@
           $("#search_image_result tr").remove();
           $("#search_image_result th").remove();
           if (result) {
-            $('#search_image_result').append( '<tr><th>Image ID</th><th>Labels</th></tr>' );
+            $('#search_image_result').append( '<tr><th>Image ID</th></tr>' );
             result.forEach(item => {
-              $('#search_image_result').append( '<tr><td>' + item.id + '</th><th>' + item.labels.join() + '</th></tr>' );
+              $('#search_image_result').append( '<tr><td>' + item.id + '</th></tr>' );
             });
           }
         },

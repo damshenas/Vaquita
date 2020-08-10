@@ -12,7 +12,7 @@ def handler(event, context):
         'headers': {
             'Content-Type': 'text/html'
         },
-        'body': file_get_contents("upload.html")
+        'body': file_get_contents("index.html")
     }
 
 
