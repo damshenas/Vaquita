@@ -97,7 +97,7 @@ class VaquitaStack(core.Stack):
             auto_verify={"email": True},
             self_sign_up_enabled=True)
 
-        self.userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
+        userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
             supported_identity_providers=["COGNITO"],
             allowed_o_auth_flows=["implicit"],
             allowed_o_auth_scopes=["phone", "email", "openid", "profile"],
@@ -106,7 +106,7 @@ class VaquitaStack(core.Stack):
             allowed_o_auth_flows_user_pool_client=True,
             explicit_auth_flows=["ALLOW_REFRESH_TOKEN_AUTH"])
 
-        self.userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
+        userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
             user_pool=usersPool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
@@ -248,6 +248,12 @@ class VaquitaStack(core.Stack):
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
         self.add_cors_options(apiGatewayImageSearchResource)
+
+        ### outputs
+        core.CfnOutput(self, 'CognitoHostedUILogin',
+            value='https://{}.auth.{}.amazoncognito.com/login?client_id={}&response_type=token&scope={}&redirect_uri={}'.format(userPoolDomain.domain_name, core.Aws.REGION, userPoolAppClient.ref, '+'.join(userPoolAppClient.allowed_o_auth_scopes), apiGatewayLandingPageResource.url),
+            description='The Cognito Hosted UI Login Page'
+        )
 
     def add_cors_options(self, apigw_resource):
         apigw_resource.add_method('OPTIONS', _apigw.MockIntegration(
