@@ -93,8 +93,11 @@ class VaquitaStack(core.Stack):
             }])
 
         ### cognito
+        required_attribute = _cognito.StandardAttribute(required=True)
+
         usersPool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
-            auto_verify={"email": True},
+            auto_verify=_cognito.AutoVerifiedAttrs(email=True), #required for self sign-up
+            standard_attributes=_cognito.StandardAttributes(email=required_attribute), #required for self sign-up
             self_sign_up_enabled=True)
 
         userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
