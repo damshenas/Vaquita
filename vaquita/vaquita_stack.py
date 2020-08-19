@@ -8,6 +8,11 @@ from aws_cdk import (
     aws_dynamodb as _dydb,
     aws_apigateway as _apigw,
     aws_iam as _iam,
+    aws_events as _events,
+    aws_events_targets as _event_targets,
+    aws_ec2 as _ec2,
+    aws_rds as _rds,
+    aws_secretsmanager as _secrets_manager,
     core
 )
 
@@ -197,7 +202,7 @@ class VaquitaStack(core.Stack):
         imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
         dynamodb_table.grant_write_data(imageAnalyzerFunction)
-        
+
         ### image search function
         imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
             function_name="VAQUITA_IMAGE_SEARCH",
@@ -251,6 +256,84 @@ class VaquitaStack(core.Stack):
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
         self.add_cors_options(apiGatewayImageSearchResource)
+
+        ### VPC
+        vpc = _ec2.Vpc(self, "VAQUITA_VPC",
+            cidr="10.0.0.0/16",
+            enable_dns_hostnames=True,
+            enable_dns_support=True,
+            max_azs=2,
+            subnet_configuration=[
+                _ec2.SubnetConfiguration(name="public", cidr_mask=24,reserved=False, subnet_type=_ec2.SubnetType.PUBLIC),
+                # _ec2.SubnetConfiguration(name="private", cidr_mask=24,reserved=False, subnet_type=_ec2.SubnetType.PRIVATE)
+            ],
+            # nat_gateways=1,
+        )
+
+        ### Secret Manager
+        db_secret = _rds.DatabaseSecret(self, "VAQUITA_DATABASE_SECRET",
+            username='dba'
+        )
+
+        ### RDS
+        database = _rds.DatabaseCluster(self, "VAQUITA_DATABASE",
+            engine=_rds.DatabaseClusterEngine.AURORA_MYSQL,
+            # instance_class=_ec2.InstanceType.of(_ec2.InstanceClass.BURSTABLE2, _ec2.InstanceSize.SMALL),
+            master_user=_rds.Login(username="admin"),
+            instance_props=_rds.InstanceProps(
+                vpc=vpc,
+                vpc_subnets=_ec2.SubnetSelection(subnet_type=_ec2.SubnetType.PRIVATE),
+                instance_type=_ec2.InstanceType(instance_type_identifier="t2.small")
+            ),
+            instances=1,
+            # allocated_storage=100,
+            # storage_type=_rds.StorageType.GP2,
+            # cloudwatch_logs_exports=["audit", "error", "general", "slowquery"],
+            # deletion_protection=False,
+            # delete_automated_backups=False,
+            # backup_retention=core.Duration.days(7),
+            # parameter_group=_rds.ClusterParameterGroup.from_parameter_group_name(
+            #     self, "para-group-aurora",
+            #     parameter_group_name="default.aurora-mysql5.7"
+            # ),
+            )
+        # for asg_sg in asg_security_groups:
+        #     db_Aurora_cluster.connections.allow_default_port_from(asg_sg, "EC2 Autoscaling Group access Aurora")
+
+
+
+        secret_attached = _secrets_manager.CfnSecretTargetAttachment(self, "VAQUITA_DATABASE_SECRET_ATTACHMENT",
+            secret_id=db_secret.secret_arn,
+            target_id=database._get_resource_arn_attribute,
+            target_type="AWS::RDS::DBCluster"
+
+        )
+        # secret_attached.node.add_dependency(database)
+
+        ### database function
+        databaseFunction = _lambda.Function(self, "VAQUITA_DATABASE_FUNCTION",
+            function_name="VAQUITA_DATABASE_FUNCTION",
+            runtime=_lambda.Runtime.PYTHON_3_7,
+            timeout=core.Duration.seconds(5),
+            environment={
+                "VAQUITA_DATABASE": "123",
+                "REGION": core.Aws.REGION
+                },
+            handler="main.handler",
+            code=_lambda.Code.asset("./src/database")) 
+        
+        ### event bridge
+        event_bus = _events.EventBus(self, "VAQUITA_IMAGE_CONTENT_BUS")
+
+        event_rule = _events.Rule(self, "VAQUITA_IMAGE_CONTENT_RULE",
+                    rule_name="VAQUITA_IMAGE_CONTENT_RULE",
+                    # targets=_event_targets.LambdaFunction(databaseFunction),
+                    description="The event from image analyzer to store the data",
+                    event_bus=event_bus,
+                    event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
+                    )
+
+        event_rule.add_target(_event_targets.LambdaFunction(databaseFunction))
 
         ### outputs
         core.CfnOutput(self, 'CognitoHostedUILogin',
