@@ -1,39 +1,33 @@
-import os
+import boto3
+import botocore.config
 import logging
-import sys
 import json
+import os
 
-script_path = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, "{}/assets".format(script_path))
-
-import pymysql as mysql
+aws_config = botocore.config.Config(
+    region_name = os.getenv('REGION'),
+    signature_version = 'v4',
+    retries = {
+        'max_attempts': 5,
+        'mode': 'standard'
+    }
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-try:
-    conn = mysql.connect(os.environ['HOSTNAME'], user=os.environ['USERNAME'], passwd=os.environ['PASSWORD'], db=os.environ['DB_NAME'], connect_timeout=5)
-except mysql.MySQLError as e:
-    logger.error("ERROR: Unexpected error: Could not connect to MySQL instance.")
-    logger.error(e)
-    sys.exit()
-
-logger.info("SUCCESS: Connection to RDS MySQL instance succeeded")
+data_client = boto3.client('rds-data', config=aws_config)
+cluster_arn = os.getenv('CLUSTER_ARN')
+credentials_arn = os.getenv('CREDENTIALS_ARN')
+db_name = os.getenv('DB_NAME')
 
 def handler(event, context):
-    item_count = 0
 
-    with conn.cursor() as cur:
-        cur.execute("create table Employee ( EmpID  int NOT NULL, Name varchar(255) NOT NULL, PRIMARY KEY (EmpID))")
-        cur.execute('insert into Employee (EmpID, Name) values(1, "Joe")')
-        cur.execute('insert into Employee (EmpID, Name) values(2, "Bob")')
-        cur.execute('insert into Employee (EmpID, Name) values(3, "Mary")')
-        conn.commit()
-        cur.execute("select * from Employee")
-        for row in cur:
-            item_count += 1
-            logger.info(row)
-            #print(row)
-    conn.commit()
+    response = data_client.execute_statement(
+        resourceArn = cluster_arn, 
+        secretArn = credentials_arn, 
+        database = 'mydb', 
+        sql = 'SHOW DATABASES')
 
-    return "Added %d items from RDS MySQL table" %(item_count)
+
+    return response

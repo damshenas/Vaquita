@@ -2,7 +2,6 @@ import boto3
 import botocore.config
 import os
 import logging
-import sys
 import json
 
 aws_config = botocore.config.Config(
@@ -13,9 +12,6 @@ aws_config = botocore.config.Config(
         'mode': 'standard'
     }
 )
-
-script_path = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, "{}/assets".format(script_path))
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -59,10 +55,10 @@ def handler(event, context):
 
         image_id = key.split("/")[-1]
 
-        with dynamodb_table.batch_writer() as batch:
-            for label in object_labels:
-                dynamodb_record = {'id':image_id, 'label': label.lower()}
-                batch.put_item(Item=dynamodb_record)
+        # with dynamodb_table.batch_writer() as batch:
+        #     for label in object_labels:
+        #         dynamodb_record = {'id':image_id, 'label': label.lower()}
+        #         batch.put_item(Item=dynamodb_record)
 
         logger.info("Image is indexed: {}: {}".format(image_id, object_labels))
 
