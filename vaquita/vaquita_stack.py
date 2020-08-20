@@ -283,22 +283,44 @@ class VaquitaStack(core.Stack):
         secret_target.node.add_dependency(database)
 
         ### database function
-        databaseFunction = _lambda.Function(self, "VAQUITA_DATABASE_FUNCTION",
+
+        database_function_role = _iam.Role(self, "VAQUITA_DATABASE_FUNCTION_ROLE",
+            role_name="VAQUITA_DATABASE_FUNCTION_ROLE",
+            assumed_by=_iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                _iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaVPCAccessExecutionRole"),
+                _iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole"),
+                _iam.ManagedPolicy.from_aws_managed_policy_name("AmazonRDSDataFullAccess")
+            ]
+        )
+        
+        database_function = _lambda.Function(self, "VAQUITA_DATABASE_FUNCTION",
             function_name="VAQUITA_DATABASE_FUNCTION",
             runtime=_lambda.Runtime.PYTHON_3_7,
             timeout=core.Duration.seconds(5),
+            role=database_function_role,
             # vpc=vpc,
             # vpc_subnets=_ec2.SubnetSelection(subnet_type=_ec2.SubnetType.ISOLATED),
             environment={
-                # "HOSTNAME": database.cluster_endpoint,
-                # "USERNAME": database.cluster_endpoint,
-                # "PASSWORD": database.cluster_endpoint,
-                # "DB_NAME": database.cluster_endpoint,
+                "CLUSTER_ARN": database.ref,
+                "CREDENTIALS_ARN": database_secret.secret_arn,
+                "DB_NAME": database.database_name,
                 "REGION": core.Aws.REGION
                 },
             handler="main.handler",
-            code=_lambda.Code.asset("./src/database")) 
-        
+            code=_lambda.Code.asset("./src/database")
+        ) 
+
+        # rds_data_access = _iam.PolicyStatement(
+        #     effect=_iam.Effect.ALLOW, 
+        #     actions=["translate:TranslateText"],
+        #     resources=["*"] #tbc     
+        # ) 
+
+        # a = _iam.ManagedPolicy.from_aws_managed_policy_name("AmazonRDSDataFullAccess")
+        # a.managed_policy_arn
+        # database_function.add_to_role_policy(rds_data_access)
+
         ### event bridge
         event_bus = _events.EventBus(self, "VAQUITA_IMAGE_CONTENT_BUS")
 
@@ -310,7 +332,7 @@ class VaquitaStack(core.Stack):
                     event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
                     )
 
-        event_rule.add_target(_event_targets.LambdaFunction(databaseFunction))
+        event_rule.add_target(_event_targets.LambdaFunction(database_function))
 
         ### outputs
         core.CfnOutput(self, 'CognitoHostedUILogin',
