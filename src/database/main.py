@@ -21,13 +21,14 @@ cluster_arn = os.getenv('CLUSTER_ARN')
 credentials_arn = os.getenv('CREDENTIALS_ARN')
 db_name = os.getenv('DB_NAME')
 
+create_table_and_index = "CREATE TABLE IF NOT EXISTS tags (image_id VARCHAR(40) PRIMARY KEY, label VARCHAR(255) NOT NULL, INDEX (image_id, label))"
+data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = create_table_and_index)
+
 def handler(event, context):
+    query = 'SHOW TABLES'
+    response = data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = query)
 
-    response = data_client.execute_statement(
-        resourceArn = cluster_arn, 
-        secretArn = credentials_arn, 
-        database = 'mydb', 
-        sql = 'SHOW DATABASES')
+    print (response["records"])
+    print (response["numberOfRecordsUpdated"])
 
-
-    return response
+    return True

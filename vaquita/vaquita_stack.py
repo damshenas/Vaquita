@@ -229,12 +229,20 @@ class VaquitaStack(core.Stack):
         self.add_cors_options(apiGatewayLandingPageResource)
         self.add_cors_options(apiGatewayImageSearchResource)
 
+        ### secret manager
 
-
-        database_secret = _rds.DatabaseSecret(self, "VAQUITA_DATABASE_SECRET",
-            secret_name="rds-db-credentials/rds-database-secret",
-            username="dba"
+        database_secret = _secrets_manager.Secret(self, "VAQUITA_DATABASE_SECRET",
+            secret_name="rds-db-credentials/vaquita-rds-secret",
+            generate_secret_string=_secrets_manager.SecretStringGenerator(
+                generate_string_key='password',
+                secret_string_template='{"username": "dba"}',
+                require_each_included_type=True
+            )
         )
+
+        # database_secret = _rds.DatabaseSecret(self, "VAQUITA_DATABASE_SECRET",
+        #     username="dba"
+        # )
 
         database = _rds.CfnDBCluster(self, "VAQUITA_DATABASE",
             engine=_rds.DatabaseClusterEngine.aurora_mysql(version=_rds.AuroraMysqlEngineVersion.VER_5_7_12).engine_type,
@@ -254,8 +262,10 @@ class VaquitaStack(core.Stack):
             ),
         )
 
+        database_cluster_arn = "arn:aws:rds:{}:{}:cluster:{}".format(core.Aws.REGION, core.Aws.ACCOUNT_ID, database.ref)
+   
         # updating image search function to include database info
-        imageSearchFunction.add_environment("CLUSTER_ARN", database.ref)
+        imageSearchFunction.add_environment("CLUSTER_ARN", database_cluster_arn)
         imageSearchFunction.add_environment("CREDENTIALS_ARN", database_secret.secret_arn)
         imageSearchFunction.add_environment("DB_NAME", database.database_name)
 
@@ -267,13 +277,6 @@ class VaquitaStack(core.Stack):
         )
 
         secret_target.node.add_dependency(database)
-
-        database.node.try_find_child('')
-
-        dbSecret = database.node.tryFindChild('Secret')# as _rds.DatabaseSecret
-        cfnSecret = dbSecret.node.defaultChild as secretsmanager.CfnSecret
-        cfnSecret.addPropertyOverride('GenerateSecretString.ExcludeCharacters', '"@/\\;')
-
 
         ### database function
 
@@ -295,7 +298,7 @@ class VaquitaStack(core.Stack):
             # vpc=vpc,
             # vpc_subnets=_ec2.SubnetSelection(subnet_type=_ec2.SubnetType.ISOLATED),
             environment={
-                "CLUSTER_ARN": database.ref,
+                "CLUSTER_ARN": database_cluster_arn,
                 "CREDENTIALS_ARN": database_secret.secret_arn,
                 "DB_NAME": database.database_name,
                 "REGION": core.Aws.REGION

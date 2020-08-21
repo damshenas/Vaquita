@@ -16,10 +16,13 @@ aws_config = botocore.config.Config(
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-dynamodb_resource = boto3.resource('dynamodb', config=aws_config)
-dynamodb_table = dynamodb_resource.Table(os.getenv('TABLE_NAME'))
+data_client = boto3.client('rds-data', config=aws_config)
+cluster_arn = os.getenv('CLUSTER_ARN')
+credentials_arn = os.getenv('CREDENTIALS_ARN')
+db_name = os.getenv('DB_NAME')
 
-rekognition_client = boto3.client('rekognition', config=aws_config)
+create_table_and_index = "CREATE TABLE IF NOT EXISTS tags (image_id VARCHAR(40) PRIMARY KEY, label VARCHAR(255) NOT NULL, INDEX (image_id, label))"
+data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = create_table_and_index)
 
 def handler(event, context):
 
