@@ -25,10 +25,12 @@ create_table_and_index = "CREATE TABLE IF NOT EXISTS tags (image_id VARCHAR(40) 
 data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = create_table_and_index)
 
 def handler(event, context):
-    query = 'SHOW TABLES'
+    image_id = event["source"]
+    labels = event["detail"]["labels"]
+
+    labels_values = ','.join(["('{}','{}')".format(image_id, l) for l in labels]) 
+
+    query = 'INSERT INTO tags (image_id, label) VALUES {};'.format(labels_values)
     response = data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = query)
-
-    print (response["records"])
-    print (response["numberOfRecordsUpdated"])
-
+    print (response)
     return True

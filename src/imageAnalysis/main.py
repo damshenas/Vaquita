@@ -1,6 +1,6 @@
 import boto3
 import botocore.config
-import os
+import os, sys
 import logging
 import json
 
@@ -16,13 +16,10 @@ aws_config = botocore.config.Config(
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-data_client = boto3.client('rds-data', config=aws_config)
-cluster_arn = os.getenv('CLUSTER_ARN')
-credentials_arn = os.getenv('CREDENTIALS_ARN')
-db_name = os.getenv('DB_NAME')
+events_client = boto3.client('events', config=aws_config)
+rekognition_client = boto3.client('rekognition', config=aws_config)
 
-create_table_and_index = "CREATE TABLE IF NOT EXISTS tags (image_id VARCHAR(40) PRIMARY KEY, label VARCHAR(255) NOT NULL, INDEX (image_id, label))"
-data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = create_table_and_index)
+event_bus_name = os.getenv('EVENT_BUS')
 
 def handler(event, context):
 
@@ -50,19 +47,30 @@ def handler(event, context):
         object_labels = []
 
         for l in detected_labels['Labels']:
-            object_labels.append(l['Name']) # add objects in image
+            object_labels.append(l['Name'].lower()) # add objects in image
 
         for l in detected_unsafe_contents['ModerationLabels']:
-            object_labels.append(l['Name'])
-            object_labels.append("offensive") #label image as offensive
+            if ('offensive' not in object_labels): object_labels.append("offensive") #label image as offensive
+            object_labels.append(l['Name'].lower())
 
         image_id = key.split("/")[-1]
 
-        # with dynamodb_table.batch_writer() as batch:
-        #     for label in object_labels:
-        #         dynamodb_record = {'id':image_id, 'label': label.lower()}
-        #         batch.put_item(Item=dynamodb_record)
+        response = events_client.put_events(
+            Entries=[
+                {
+                    'Source': image_id,
+                    'Resources': [
+                        context.invoked_function_arn,
+                    ],
+                    'DetailType': 'images_labels',
+                    'Detail': json.dumps({"labels":object_labels}),
+                    'EventBusName': event_bus_name
+                },
+            ]
+        )
+
+        if response["FailedEntryCount"] == 1:
+            print(response["Entries"])
+            sys.exit(1)
 
         logger.info("Image is indexed: {}: {}".format(image_id, object_labels))
-
-    return True

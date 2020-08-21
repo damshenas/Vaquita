@@ -21,6 +21,14 @@ logger.setLevel(logging.INFO)
 
 region =  os.getenv('REGION')
 
+data_client = boto3.client('rds-data', config=aws_config)
+cluster_arn = os.getenv('CLUSTER_ARN')
+credentials_arn = os.getenv('CREDENTIALS_ARN')
+db_name = os.getenv('DB_NAME')
+
+create_table_and_index = "CREATE TABLE IF NOT EXISTS tags (image_id VARCHAR(40) PRIMARY KEY, label VARCHAR(255) NOT NULL, INDEX (image_id, label))"
+data_client.execute_statement(resourceArn = cluster_arn, secretArn = credentials_arn, database = db_name, sql = create_table_and_index)
+
 def handler(event, context):
     params = {}
     

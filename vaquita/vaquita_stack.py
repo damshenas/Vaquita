@@ -240,10 +240,6 @@ class VaquitaStack(core.Stack):
             )
         )
 
-        # database_secret = _rds.DatabaseSecret(self, "VAQUITA_DATABASE_SECRET",
-        #     username="dba"
-        # )
-
         database = _rds.CfnDBCluster(self, "VAQUITA_DATABASE",
             engine=_rds.DatabaseClusterEngine.aurora_mysql(version=_rds.AuroraMysqlEngineVersion.VER_5_7_12).engine_type,
             engine_mode="serverless",
@@ -307,29 +303,20 @@ class VaquitaStack(core.Stack):
             code=_lambda.Code.asset("./src/database")
         ) 
 
-
-        # rds_data_access = _iam.PolicyStatement(
-        #     effect=_iam.Effect.ALLOW, 
-        #     actions=["translate:TranslateText"],
-        #     resources=["*"] #tbc     
-        # ) 
-
-        # a = _iam.ManagedPolicy.from_aws_managed_policy_name("AmazonRDSDataFullAccess")
-        # a.managed_policy_arn
-        # database_function.add_to_role_policy(rds_data_access)
-
         ### event bridge
         event_bus = _events.EventBus(self, "VAQUITA_IMAGE_CONTENT_BUS")
 
         event_rule = _events.Rule(self, "VAQUITA_IMAGE_CONTENT_RULE",
-                    rule_name="VAQUITA_IMAGE_CONTENT_RULE",
-                    # targets=_event_targets.LambdaFunction(databaseFunction),
-                    description="The event from image analyzer to store the data",
-                    event_bus=event_bus,
-                    event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
-                    )
+            rule_name="VAQUITA_IMAGE_CONTENT_RULE",
+            description="The event from image analyzer to store the data",
+            event_bus=event_bus,
+            event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
+        )
 
         event_rule.add_target(_event_targets.LambdaFunction(database_function))
+
+        event_bus.grant_put_events(imageAnalyzerFunction)
+        imageAnalyzerFunction.add_environment("EVENT_BUS", event_bus.event_bus_name)
 
         ### outputs
         core.CfnOutput(self, 'CognitoHostedUILogin',
