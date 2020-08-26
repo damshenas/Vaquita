@@ -58,12 +58,12 @@ def handler(event, context):
         response = events_client.put_events(
             Entries=[
                 {
-                    'Source': image_id,
+                    'Source': "EventBridge",
                     'Resources': [
                         context.invoked_function_arn,
                     ],
                     'DetailType': 'images_labels',
-                    'Detail': json.dumps({"labels":object_labels}),
+                    'Detail': json.dumps({"labels": object_labels, "image_id": image_id}),
                     'EventBusName': event_bus_name
                 },
             ]

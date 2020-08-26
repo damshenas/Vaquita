@@ -12,7 +12,17 @@ from aws_cdk import (
     aws_ec2 as _ec2,
     aws_rds as _rds,
     aws_secretsmanager as _secrets_manager,
+    custom_resources as _custom_resources,
     core
+)
+from aws_cdk.core import CustomResource
+
+from aws_cdk.custom_resources import (
+    AwsCustomResource,
+    AwsCustomResourcePolicy,
+    AwsSdkCall,
+    PhysicalResourceId,
+    Provider
 )
 
 # read config file
@@ -176,54 +186,6 @@ class VaquitaStack(core.Stack):
         imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
 
-        ### image search function
-        imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
-            function_name="VAQUITA_IMAGE_SEARCH",
-            runtime=_lambda.Runtime.PYTHON_3_7,
-            timeout=core.Duration.seconds(10),
-            environment={
-                "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
-                "REGION": core.Aws.REGION,
-                },
-            handler="main.handler",
-            code=_lambda.Code.asset("./src/imageSearch"))
-
-        imageSearchIntegration = _apigw.LambdaIntegration(
-            imageSearchFunction, 
-            proxy=True, 
-            integration_responses=[{
-                'statusCode': '200',
-               'responseParameters': {
-                   'method.response.header.Access-Control-Allow-Origin': "'*'",
-                }
-            }])
-
-        apiGatewayImageSearchAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
-            rest_api_id=apiGatewayImageSearchResource.rest_api.rest_api_id,
-            name="VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
-            type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
-            identity_source="method.request.header.Authorization",
-            provider_arns=[usersPool.user_pool_arn])
-
-        apiGatewayImageSearchResource.add_method('POST', imageSearchIntegration,
-            authorization_type=_apigw.AuthorizationType.COGNITO,
-            method_responses=[{
-                'statusCode': '200',
-                'responseParameters': {
-                    'method.response.header.Access-Control-Allow-Origin': True,
-                }
-            }]
-            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayImageSearchAuthorizer.ref)
-
-
-        lambda_access_search = _iam.PolicyStatement(
-            effect=_iam.Effect.ALLOW, 
-            actions=["translate:TranslateText"],
-            resources=["*"] #tbc [elasticSearch.attr_arn]              
-        ) 
-
-        imageSearchFunction.add_to_role_policy(lambda_access_search)
-
         ### API gateway finalizing
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
@@ -260,11 +222,6 @@ class VaquitaStack(core.Stack):
 
         database_cluster_arn = "arn:aws:rds:{}:{}:cluster:{}".format(core.Aws.REGION, core.Aws.ACCOUNT_ID, database.ref)
    
-        # updating image search function to include database info
-        imageSearchFunction.add_environment("CLUSTER_ARN", database_cluster_arn)
-        imageSearchFunction.add_environment("CREDENTIALS_ARN", database_secret.secret_arn)
-        imageSearchFunction.add_environment("DB_NAME", database.database_name)
-
         ### secret manager
         secret_target = _secrets_manager.CfnSecretTargetAttachment(self,"VAQUITA_DATABASE_SECRET_TARGET",
             target_type="AWS::RDS::DBCluster",
@@ -275,9 +232,8 @@ class VaquitaStack(core.Stack):
         secret_target.node.add_dependency(database)
 
         ### database function
-
-        database_function_role = _iam.Role(self, "VAQUITA_DATABASE_FUNCTION_ROLE",
-            role_name="VAQUITA_DATABASE_FUNCTION_ROLE",
+        image_data_function_role = _iam.Role(self, "VAQUITA_IMAGE_DATA_FUNCTION_ROLE",
+            role_name="VAQUITA_IMAGE_DATA_FUNCTION_ROLE",
             assumed_by=_iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
                 _iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaVPCAccessExecutionRole"),
@@ -286,11 +242,11 @@ class VaquitaStack(core.Stack):
             ]
         )
         
-        database_function = _lambda.Function(self, "VAQUITA_DATABASE_FUNCTION",
-            function_name="VAQUITA_DATABASE_FUNCTION",
+        image_data_function = _lambda.Function(self, "VAQUITA_IMAGE_DATA",
+            function_name="VAQUITA_IMAGE_DATA",
             runtime=_lambda.Runtime.PYTHON_3_7,
             timeout=core.Duration.seconds(5),
-            role=database_function_role,
+            role=image_data_function_role,
             # vpc=vpc,
             # vpc_subnets=_ec2.SubnetSelection(subnet_type=_ec2.SubnetType.ISOLATED),
             environment={
@@ -300,8 +256,58 @@ class VaquitaStack(core.Stack):
                 "REGION": core.Aws.REGION
                 },
             handler="main.handler",
-            code=_lambda.Code.asset("./src/database")
+            code=_lambda.Code.asset("./src/imageData")
         ) 
+
+        imageSearchIntegration = _apigw.LambdaIntegration(
+            image_data_function, 
+            proxy=True, 
+            integration_responses=[{
+                'statusCode': '200',
+               'responseParameters': {
+                   'method.response.header.Access-Control-Allow-Origin': "'*'",
+                }
+            }])
+
+        apiGatewayImageSearchAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+            rest_api_id=apiGatewayImageSearchResource.rest_api.rest_api_id,
+            name="VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+            type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
+            identity_source="method.request.header.Authorization",
+            provider_arns=[usersPool.user_pool_arn])
+
+        apiGatewayImageSearchResource.add_method('POST', imageSearchIntegration,
+            authorization_type=_apigw.AuthorizationType.COGNITO,
+            method_responses=[{
+                'statusCode': '200',
+                'responseParameters': {
+                    'method.response.header.Access-Control-Allow-Origin': True,
+                }
+            }]
+            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayImageSearchAuthorizer.ref)
+
+
+        lambda_access_search = _iam.PolicyStatement(
+            effect=_iam.Effect.ALLOW, 
+            actions=["translate:TranslateText"],
+            resources=["*"] #tbc [elasticSearch.attr_arn]              
+        ) 
+
+        image_data_function.add_to_role_policy(lambda_access_search)
+
+        ### custom resource
+        lambda_provider = Provider(self, 'VAQUITA_IMAGE_DATA_PROVIDER', 
+            on_event_handler=image_data_function
+        )
+
+        CustomResource(self, 'VAQUITA_IMAGE_DATA_RESOURCE', 
+            service_token=lambda_provider.service_token,
+            pascal_case_properties=False,
+            resource_type="Custom::SchemaCreation",
+            properties={
+                "source": "Cloudformation"
+            }
+        )
 
         ### event bridge
         event_bus = _events.EventBus(self, "VAQUITA_IMAGE_CONTENT_BUS")
@@ -313,7 +319,7 @@ class VaquitaStack(core.Stack):
             event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
         )
 
-        event_rule.add_target(_event_targets.LambdaFunction(database_function))
+        event_rule.add_target(_event_targets.LambdaFunction(image_data_function))
 
         event_bus.grant_put_events(imageAnalyzerFunction)
         imageAnalyzerFunction.add_environment("EVENT_BUS", event_bus.event_bus_name)

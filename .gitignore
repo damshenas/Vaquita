@@ -25,3 +25,5 @@ cdk.out/
 
 # requirements
 assets
+pyvenv.cfg
+.vscode/*
