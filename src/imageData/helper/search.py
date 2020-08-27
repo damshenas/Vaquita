@@ -30,7 +30,13 @@ def search_label(label, country = None, language = None):
 
     logger.info(result)
 
-    response = result["records"]
+    response = []
+    
+    for record in result["records"]:
+        for item in record:
+            response.append({
+                "id": item["stringValue"]
+            })
 
     return {
         'statusCode': 200,

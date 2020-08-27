@@ -62,7 +62,7 @@
           $(outputTab + " th").remove();
           if (results) {
             $(outputTab).append( '<tr><th>Image ID</th></tr>' );
-            results[0].forEach(item => {
+            results.forEach(item => {
               $(outputTab).append( '<tr><td>' + item.id + '</th></tr>' );
             });
           }
