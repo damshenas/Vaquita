@@ -1,8 +1,7 @@
 import boto3
 import botocore.config
-import os
+import os, sys
 import logging
-import sys
 import json
 
 aws_config = botocore.config.Config(
@@ -14,16 +13,13 @@ aws_config = botocore.config.Config(
     }
 )
 
-script_path = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, "{}/assets".format(script_path))
-
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-dynamodb_resource = boto3.resource('dynamodb', config=aws_config)
-dynamodb_table = dynamodb_resource.Table(os.getenv('TABLE_NAME'))
-
+events_client = boto3.client('events', config=aws_config)
 rekognition_client = boto3.client('rekognition', config=aws_config)
+
+event_bus_name = os.getenv('EVENT_BUS')
 
 def handler(event, context):
 
@@ -51,19 +47,27 @@ def handler(event, context):
         object_labels = []
 
         for l in detected_labels['Labels']:
-            object_labels.append(l['Name']) # add objects in image
+            object_labels.append(l['Name'].lower()) # add objects in image
 
         for l in detected_unsafe_contents['ModerationLabels']:
-            object_labels.append(l['Name'])
-            object_labels.append("offensive") #label image as offensive
+            if ('offensive' not in object_labels): object_labels.append("offensive") #label image as offensive
+            object_labels.append(l['Name'].lower())
 
         image_id = key.split("/")[-1]
 
-        with dynamodb_table.batch_writer() as batch:
-            for label in object_labels:
-                dynamodb_record = {'id':image_id, 'label': label.lower()}
-                batch.put_item(Item=dynamodb_record)
+        response = events_client.put_events(
+            Entries=[
+                {
+                    'Source': "EventBridge",
+                    'Resources': [
+                        context.invoked_function_arn,
+                    ],
+                    'DetailType': 'images_labels',
+                    'Detail': json.dumps({"labels": object_labels, "image_id": image_id}),
+                    'EventBusName': event_bus_name
+                },
+            ]
+        )
 
-        logger.info("Image is indexed: {}: {}".format(image_id, object_labels))
-
-    return True
+        if response["FailedEntryCount"] == 1:
+            raise Exception(f'Failed entry observed. Count: {response["Entries"]}')

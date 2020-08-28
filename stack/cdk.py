@@ -5,10 +5,24 @@ from aws_cdk import (
     aws_s3 as _s3,
     aws_cognito as _cognito,
     aws_sqs as _sqs,
-    aws_dynamodb as _dydb,
     aws_apigateway as _apigw,
     aws_iam as _iam,
+    aws_events as _events,
+    aws_events_targets as _event_targets,
+    aws_ec2 as _ec2,
+    aws_rds as _rds,
+    aws_secretsmanager as _secrets_manager,
+    custom_resources as _custom_resources,
     core
+)
+from aws_cdk.core import CustomResource
+
+from aws_cdk.custom_resources import (
+    AwsCustomResource,
+    AwsCustomResourcePolicy,
+    AwsSdkCall,
+    PhysicalResourceId,
+    Provider
 )
 
 # read config file
@@ -42,30 +56,6 @@ class VaquitaStack(core.Stack):
         apiGatewayLandingPageResource = apiGatewayResource.add_resource('web')
         apiGatewayGetSignedUrlResource = apiGatewayResource.add_resource('signedUrl')
         apiGatewayImageSearchResource = apiGatewayResource.add_resource('search')
-
-        ### create dynamo table
-        dynamodb_table = _dydb.Table(
-            self, "VAQUITA_TABLE",
-            partition_key=_dydb.Attribute(
-                name="id",
-                type=_dydb.AttributeType.STRING
-            ),
-            sort_key=_dydb.Attribute(
-                name="label",
-                type=_dydb.AttributeType.STRING
-            ),
-            billing_mode=_dydb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=core.RemovalPolicy.DESTROY # NOT recommended for production code
-        )
-
-        dynamodb_table.add_global_secondary_index(
-            index_name='VAQUITA_TABLE_LABEL_INDEX',
-            partition_key=_dydb.Attribute(
-                name="label",
-                type=_dydb.AttributeType.STRING
-            ),
-            projection_type=_dydb.ProjectionType.KEYS_ONLY
-        )
 
         ### landing page function
         getLandingPageFunction = _lambda.Function(self, "VAQUITA_GET_LANDING_PAGE",
@@ -180,7 +170,6 @@ class VaquitaStack(core.Stack):
             environment={
                 "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
                 "REGION": core.Aws.REGION,
-                "TABLE_NAME": dynamodb_table.table_name
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis")) 
@@ -196,23 +185,82 @@ class VaquitaStack(core.Stack):
 
         imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
-        dynamodb_table.grant_write_data(imageAnalyzerFunction)
+
+        ### API gateway finalizing
+        self.add_cors_options(apiGatewayGetSignedUrlResource)
+        self.add_cors_options(apiGatewayLandingPageResource)
+        self.add_cors_options(apiGatewayImageSearchResource)
+
+        ### secret manager
+
+        database_secret = _secrets_manager.Secret(self, "VAQUITA_DATABASE_SECRET",
+            secret_name="rds-db-credentials/vaquita-rds-secret",
+            generate_secret_string=_secrets_manager.SecretStringGenerator(
+                generate_string_key='password',
+                secret_string_template='{"username": "dba"}',
+                require_each_included_type=True
+            )
+        )
+
+        database = _rds.CfnDBCluster(self, "VAQUITA_DATABASE",
+            engine=_rds.DatabaseClusterEngine.aurora_mysql(version=_rds.AuroraMysqlEngineVersion.VER_5_7_12).engine_type,
+            engine_mode="serverless",
+            # availability_zones=vpc.availability_zones,
+            database_name="images_labels",
+            enable_http_endpoint=True,
+            deletion_protection=False,
+            # enable_cloudwatch_logs_exports=["error"],
+            master_username=database_secret.secret_value_from_json("username").to_string(),
+            master_user_password=database_secret.secret_value_from_json("password").to_string(),
+            scaling_configuration=_rds.CfnDBCluster.ScalingConfigurationProperty(
+                auto_pause=True,
+                min_capacity=2,
+                max_capacity=8,
+                seconds_until_auto_pause=1800
+            ),
+        )
+
+        database_cluster_arn = "arn:aws:rds:{}:{}:cluster:{}".format(core.Aws.REGION, core.Aws.ACCOUNT_ID, database.ref)
+   
+        ### secret manager
+        secret_target = _secrets_manager.CfnSecretTargetAttachment(self,"VAQUITA_DATABASE_SECRET_TARGET",
+            target_type="AWS::RDS::DBCluster",
+            target_id=database.ref,
+            secret_id=database_secret.secret_arn
+        )
+
+        secret_target.node.add_dependency(database)
+
+        ### database function
+        image_data_function_role = _iam.Role(self, "VAQUITA_IMAGE_DATA_FUNCTION_ROLE",
+            role_name="VAQUITA_IMAGE_DATA_FUNCTION_ROLE",
+            assumed_by=_iam.ServicePrincipal("lambda.amazonaws.com"),
+            managed_policies=[
+                _iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaVPCAccessExecutionRole"),
+                _iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole"),
+                _iam.ManagedPolicy.from_aws_managed_policy_name("AmazonRDSDataFullAccess")
+            ]
+        )
         
-        ### image search function
-        imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
-            function_name="VAQUITA_IMAGE_SEARCH",
+        image_data_function = _lambda.Function(self, "VAQUITA_IMAGE_DATA",
+            function_name="VAQUITA_IMAGE_DATA",
             runtime=_lambda.Runtime.PYTHON_3_7,
-            timeout=core.Duration.seconds(10),
+            timeout=core.Duration.seconds(5),
+            role=image_data_function_role,
+            # vpc=vpc,
+            # vpc_subnets=_ec2.SubnetSelection(subnet_type=_ec2.SubnetType.ISOLATED),
             environment={
-                "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
-                "REGION": core.Aws.REGION,
-                "TABLE_NAME": dynamodb_table.table_name
+                "CLUSTER_ARN": database_cluster_arn,
+                "CREDENTIALS_ARN": database_secret.secret_arn,
+                "DB_NAME": database.database_name,
+                "REGION": core.Aws.REGION
                 },
             handler="main.handler",
-            code=_lambda.Code.asset("./src/imageSearch"))
+            code=_lambda.Code.asset("./src/imageData")
+        ) 
 
         imageSearchIntegration = _apigw.LambdaIntegration(
-            imageSearchFunction, 
+            image_data_function, 
             proxy=True, 
             integration_responses=[{
                 'statusCode': '200',
@@ -241,16 +289,40 @@ class VaquitaStack(core.Stack):
 
         lambda_access_search = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
-            actions=["dynamodb:Query", "translate:TranslateText"],
+            actions=["translate:TranslateText"],
             resources=["*"] #tbc [elasticSearch.attr_arn]              
         ) 
 
-        imageSearchFunction.add_to_role_policy(lambda_access_search)
+        image_data_function.add_to_role_policy(lambda_access_search)
 
-        ### API gateway finalizing
-        self.add_cors_options(apiGatewayGetSignedUrlResource)
-        self.add_cors_options(apiGatewayLandingPageResource)
-        self.add_cors_options(apiGatewayImageSearchResource)
+        ### custom resource
+        lambda_provider = Provider(self, 'VAQUITA_IMAGE_DATA_PROVIDER', 
+            on_event_handler=image_data_function
+        )
+
+        CustomResource(self, 'VAQUITA_IMAGE_DATA_RESOURCE', 
+            service_token=lambda_provider.service_token,
+            pascal_case_properties=False,
+            resource_type="Custom::SchemaCreation",
+            properties={
+                "source": "Cloudformation"
+            }
+        )
+
+        ### event bridge
+        event_bus = _events.EventBus(self, "VAQUITA_IMAGE_CONTENT_BUS")
+
+        event_rule = _events.Rule(self, "VAQUITA_IMAGE_CONTENT_RULE",
+            rule_name="VAQUITA_IMAGE_CONTENT_RULE",
+            description="The event from image analyzer to store the data",
+            event_bus=event_bus,
+            event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
+        )
+
+        event_rule.add_target(_event_targets.LambdaFunction(image_data_function))
+
+        event_bus.grant_put_events(imageAnalyzerFunction)
+        imageAnalyzerFunction.add_environment("EVENT_BUS", event_bus.event_bus_name)
 
         ### outputs
         core.CfnOutput(self, 'CognitoHostedUILogin',

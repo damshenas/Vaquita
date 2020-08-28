@@ -54,7 +54,7 @@
         url: searchImageEndpoint,
         headers: { 'Authorization': idToken },
         type: "POST",
-        data: formData,
+        data: {...formData, 'source': 'API'},
         contentType: 'application/json; charset=utf-8',
         success: function (results) {
           console.log(results);
