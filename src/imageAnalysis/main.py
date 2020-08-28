@@ -1,38 +1,27 @@
 import boto3
-import os
+import botocore.config
+import os, sys
 import logging
-import sys
 import json
 
-script_path = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, "{}/assets".format(script_path))
-
-from elasticsearch import Elasticsearch, RequestsHttpConnection
-from requests_aws4auth import AWS4Auth
+aws_config = botocore.config.Config(
+    region_name = os.getenv('REGION'),
+    signature_version = 'v4',
+    retries = {
+        'max_attempts': 5,
+        'mode': 'standard'
+    }
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-es_region =  os.getenv('REGION')
-es_host = os.getenv('ES_HOST')
-es_index = os.getenv('ES_INDEX')
+events_client = boto3.client('events', config=aws_config)
+rekognition_client = boto3.client('rekognition', config=aws_config)
 
-service = 'es'
-credentials = boto3.Session().get_credentials()
-awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, es_region, service, session_token=credentials.token)
-
-es = Elasticsearch(
-    hosts = [{'host': es_host, 'port': 443}],
-    http_auth = awsauth,
-    use_ssl = True,
-    verify_certs = True,
-    connection_class = RequestsHttpConnection
-)
-
-logger.info("Elasticsearch Connected: {}".format(es.info()))
+event_bus_name = os.getenv('EVENT_BUS')
 
 def handler(event, context):
-    rekognition = boto3.client('rekognition', es_region)
 
     for record in event['Records']:
         # receiptHandle = record['receiptHandle']
@@ -47,34 +36,38 @@ def handler(event, context):
 
         logger.info('Processing {}.'.format(key))
 
-        detected_labels = rekognition.detect_labels(
+        detected_labels = rekognition_client.detect_labels(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}},
-            MaxLabels=10,
-            MinConfidence=80)
+            MaxLabels=20,
+            MinConfidence=85)
             
-        detected_unsafe_contents = rekognition.detect_moderation_labels(
+        detected_unsafe_contents = rekognition_client.detect_moderation_labels(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}})
                
         object_labels = []
 
         for l in detected_labels['Labels']:
-            object_labels.append(l['Name']) # add objects in image
+            object_labels.append(l['Name'].lower()) # add objects in image
 
         for l in detected_unsafe_contents['ModerationLabels']:
-            object_labels.append(l['Name'])
-            object_labels.append("offensive") #label image as offensive
+            if ('offensive' not in object_labels): object_labels.append("offensive") #label image as offensive
+            object_labels.append(l['Name'].lower())
 
-        es_body = {
-                'labels': object_labels,
-                'offensive': True if "offensive" in object_labels else False
-            }
+        image_id = key.split("/")[-1]
 
-        try:
-            es.index(index=es_index, doc_type='post', id=key.split("/")[-1], body=es_body)
-        except Exception as e:
-            print('Unable to load data into es:', e)
-            print("Data: ", es_body)
+        response = events_client.put_events(
+            Entries=[
+                {
+                    'Source': "EventBridge",
+                    'Resources': [
+                        context.invoked_function_arn,
+                    ],
+                    'DetailType': 'images_labels',
+                    'Detail': json.dumps({"labels": object_labels, "image_id": image_id}),
+                    'EventBusName': event_bus_name
+                },
+            ]
+        )
 
-        logger.info("Image is indexed: {}".format(es_body))
-
-    return True
+        if response["FailedEntryCount"] == 1:
+            raise Exception(f'Failed entry observed. Count: {response["Entries"]}')
