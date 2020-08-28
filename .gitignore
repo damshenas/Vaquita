@@ -4,6 +4,7 @@ package-lock.json
 *.egg-info
 .DS_Store
 .vscode
+TODO
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -26,4 +27,3 @@ cdk.out/
 # requirements
 assets
 pyvenv.cfg
-.vscode/*
