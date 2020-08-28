@@ -11,7 +11,7 @@ aws_config = botocore.config.Config(
     region_name = os.getenv('REGION'),
     signature_version = 'v4',
     retries = {
-        'max_attempts': 5,
+        'max_attempts': int(os.getenv('DEFAULT_MAX_CALL_ATTEMPTS')),
         'mode': 'standard'
     }
 )

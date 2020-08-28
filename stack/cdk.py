@@ -1,3 +1,5 @@
+import yaml
+
 from aws_cdk import (
     aws_s3_notifications as _s3notification,
     aws_lambda_event_sources as _lambda_event_source,
@@ -36,14 +38,13 @@ from aws_cdk.custom_resources import (
     Provider
 )
 
-# read config file
-
-# create first user of the cognito user pool?
-
 class VaquitaStack(core.Stack):
 
     def __init__(self, scope: core.Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
+
+        with open("stack/config.yml", 'r') as stream:
+            configs = yaml.safe_load(stream)
 
         ### S3 core
         images_S3_bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
@@ -57,13 +58,13 @@ class VaquitaStack(core.Stack):
         image_deadletter_queue = _sqs.Queue(self, "VAQUITA_IMAGES_DEADLETTER_QUEUE")
         image_queue = _sqs.Queue(self, "VAQUITA_IMAGES_QUEUE",
             dead_letter_queue={
-                "max_receive_count": 3,
+                "max_receive_count": configs["DeadLetterQueue"]["MaxReceiveCount"],
                 "queue": image_deadletter_queue
             })
 
         ### api gateway core
         api_gateway = RestApi(self, 'VAQUITA_API_GATEWAY', rest_api_name='VaquitaApiGateway')
-        api_gateway_resource = api_gateway.root.add_resource('vaquita')
+        api_gateway_resource = api_gateway.root.add_resource(configs["ProjectName"])
         api_gateway_landing_page_resource = api_gateway_resource.add_resource('web')
         api_gateway_get_signedurl_resource = api_gateway_resource.add_resource('signedUrl')
         api_gateway_image_search_resource = api_gateway_resource.add_resource('search')
@@ -99,12 +100,12 @@ class VaquitaStack(core.Stack):
         users_pool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
             auto_verify=_cognito.AutoVerifiedAttrs(email=True), #required for self sign-up
             standard_attributes=_cognito.StandardAttributes(email=required_attribute), #required for self sign-up
-            self_sign_up_enabled=True)
+            self_sign_up_enabled=configs["Cognito"]["SelfSignUp"])
 
         user_pool_app_client = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
             supported_identity_providers=["COGNITO"],
             allowed_o_auth_flows=["implicit"],
-            allowed_o_auth_scopes=["phone", "email", "openid", "profile"],
+            allowed_o_auth_scopes=configs["Cognito"]["AllowedOAuthScopes"],
             user_pool_id=users_pool.user_pool_id,
             callback_ur_ls=[api_gateway_landing_page_resource.url],
             allowed_o_auth_flows_user_pool_client=True,
@@ -112,12 +113,15 @@ class VaquitaStack(core.Stack):
 
         user_pool_domain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
             user_pool=users_pool, 
-            cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
+            cognito_domain=_cognito.CognitoDomainOptions(domain_prefix=configs["Cognito"]["DomainPrefix"]))
 
         ### get signed URL function
         get_signedurl_function = Function(self, "VAQUITA_GET_SIGNED_URL",
             function_name="VAQUITA_GET_SIGNED_URL",
-            environment={"VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name},
+            environment={
+                "VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name,
+                "DEFAULT_SIGNEDURL_EXPIRY_SECONDS": configs["Functions"]["DefaultSignedUrlExpirySeconds"]
+            },
             runtime=Runtime.PYTHON_3_7,
             handler="main.handler",
             code=Code.asset("./src/getSignedUrl"))
@@ -135,7 +139,7 @@ class VaquitaStack(core.Stack):
         api_gateway_get_signedurl_authorizer = CfnAuthorizer(self, "VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
             rest_api_id=api_gateway_get_signedurl_resource.rest_api.rest_api_id,
             name="VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
-            type="COGNITO_USER_POOLS", #AuthorizationType.COGNITO,
+            type="COGNITO_USER_POOLS",
             identity_source="method.request.header.Authorization",
             provider_arns=[users_pool.user_pool_arn])
 
@@ -180,6 +184,7 @@ class VaquitaStack(core.Stack):
             timeout=core.Duration.seconds(10),
             environment={
                 "VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name,
+                "DEFAULT_MAX_CALL_ATTEMPTS": configs["Functions"]["DefaultMaxApiCallAttempts"],
                 "REGION": core.Aws.REGION,
                 },
             handler="main.handler",
@@ -202,7 +207,7 @@ class VaquitaStack(core.Stack):
         self.add_cors_options(api_gateway_landing_page_resource)
         self.add_cors_options(api_gateway_image_search_resource)
 
-        ### secret manager
+        ### database 
         database_secret = _secrets_manager.Secret(self, "VAQUITA_DATABASE_SECRET",
             secret_name="rds-db-credentials/vaquita-rds-secret",
             generate_secret_string=_secrets_manager.SecretStringGenerator(
@@ -215,22 +220,21 @@ class VaquitaStack(core.Stack):
         database = _rds.CfnDBCluster(self, "VAQUITA_DATABASE",
             engine=_rds.DatabaseClusterEngine.aurora_mysql(version=_rds.AuroraMysqlEngineVersion.VER_5_7_12).engine_type,
             engine_mode="serverless",
-            database_name="images_labels",
+            database_name=configs["Database"]["Name"],
             enable_http_endpoint=True,
-            deletion_protection=False,
+            deletion_protection=configs["Database"]["DeletionProtection"],
             master_username=database_secret.secret_value_from_json("username").to_string(),
             master_user_password=database_secret.secret_value_from_json("password").to_string(),
             scaling_configuration=_rds.CfnDBCluster.ScalingConfigurationProperty(
-                auto_pause=True,
-                min_capacity=2,
-                max_capacity=8,
-                seconds_until_auto_pause=1800
+                auto_pause=configs["Database"]["Scaling"]["AutoPause"],
+                min_capacity=configs["Database"]["Scaling"]["Min"],
+                max_capacity=configs["Database"]["Scaling"]["Max"],
+                seconds_until_auto_pause=configs["Database"]["Scaling"]["SecondsToAutoPause"]
             ),
         )
 
         database_cluster_arn = "arn:aws:rds:{}:{}:cluster:{}".format(core.Aws.REGION, core.Aws.ACCOUNT_ID, database.ref)
    
-        ### secret manager
         secret_target = _secrets_manager.CfnSecretTargetAttachment(self,"VAQUITA_DATABASE_SECRET_TARGET",
             target_type="AWS::RDS::DBCluster",
             target_id=database.ref,
@@ -256,6 +260,7 @@ class VaquitaStack(core.Stack):
             timeout=core.Duration.seconds(5),
             role=image_data_function_role,
             environment={
+                "DEFAULT_MAX_CALL_ATTEMPTS": configs["Functions"]["DefaultMaxApiCallAttempts"],
                 "CLUSTER_ARN": database_cluster_arn,
                 "CREDENTIALS_ARN": database_secret.secret_arn,
                 "DB_NAME": database.database_name,
@@ -278,7 +283,7 @@ class VaquitaStack(core.Stack):
         api_gateway_image_search_authorizer = CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
             rest_api_id=api_gateway_image_search_resource.rest_api.rest_api_id,
             name="VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
-            type="COGNITO_USER_POOLS", #AuthorizationType.COGNITO,
+            type="COGNITO_USER_POOLS", 
             identity_source="method.request.header.Authorization",
             provider_arns=[users_pool.user_pool_arn])
 
@@ -296,7 +301,7 @@ class VaquitaStack(core.Stack):
         lambda_access_search = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
             actions=["translate:TranslateText"],
-            resources=["*"] #tbc [elasticSearch.attr_arn]              
+            resources=["*"]            
         ) 
 
         image_data_function.add_to_role_policy(lambda_access_search)

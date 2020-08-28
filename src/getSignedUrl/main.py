@@ -6,10 +6,12 @@ import time
 import hashlib
 
 from botocore.exceptions import ClientError
+images_bucket = os.environ['VAQUITA_IMAGES_BUCKET']
+default_signedurl_expiry_seconds = os.environ['DEFAULT_SIGNEDURL_EXPIRY_SECONDS']
 
 def handler(event, context):
     uniquehash = hashlib.sha1("{}".format(time.time_ns()).encode('utf-8')).hexdigest()
-    result = create_presigned_post(os.environ['VAQUITA_IMAGES_BUCKET'], "new/{}/{}".format(uniquehash[:2],uniquehash))
+    result = create_presigned_post(images_bucket, "new/{}/{}".format(uniquehash[:2],uniquehash))
 
     return {
         'statusCode': 200,
@@ -19,20 +21,18 @@ def handler(event, context):
         'body': json.dumps(result)
     }
 
-def create_presigned_post(bucket_name, object_name,
-                          fields=None, conditions=None, expiration=3600):
-
-    # Generate a presigned S3 POST URL
+def create_presigned_post(bucket_name, object_name, fields=None, conditions=None, expiration=default_signedurl_expiry_seconds):
     s3_client = boto3.client('s3')
+
     try:
         response = s3_client.generate_presigned_post(bucket_name,
-                                                     object_name,
-                                                     Fields=fields,
-                                                     Conditions=conditions,
-                                                     ExpiresIn=expiration)
+            object_name,
+            Fields=fields,
+            Conditions=conditions,
+            ExpiresIn=int(expiration)
+        )
     except ClientError as e:
         logging.error(e)
         return None
 
-    # The response contains the presigned URL and required fields
     return response
