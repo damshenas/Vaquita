@@ -70,7 +70,4 @@ def handler(event, context):
         )
 
         if response["FailedEntryCount"] == 1:
-            print(response["Entries"])
-            sys.exit(1)
-
-        logger.info("Image is indexed: {}: {}".format(image_id, object_labels))
+            raise Exception(f'Failed entry observed. Count: {response["Entries"]}')

@@ -16,6 +16,6 @@ def create_schema():
         logger.info(f'List of tables: {response}')
     except Exception as e:
         logger.error(f'Something went wrong while creating table: {e}')
-        raise Exception(e)
+        raise e
  
     return True

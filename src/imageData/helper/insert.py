@@ -1,5 +1,5 @@
 
-from helper import batch_execute_statement
+from helper import batch_execute_statement, logger
 
 def insert_new_image(image_id, labels):
 
@@ -13,7 +13,8 @@ def insert_new_image(image_id, labels):
         ])
 
     response = batch_execute_statement(statement, params_sets)
-    print(f'Number of records updated: {len(response["updateResults"])}')
+
+    logger.info(f'Number of records updated: {len(response["updateResults"])}')
 
     return response
 
