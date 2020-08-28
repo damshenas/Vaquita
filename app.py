@@ -2,7 +2,7 @@
 
 from aws_cdk import core
 
-from vaquita.vaquita_stack import VaquitaStack
+from stack.cdk import VaquitaStack
 
 app = core.App()
 VaquitaStack(app, "vaquita", env={'region': 'eu-central-1'})
