@@ -17,7 +17,6 @@ def handler(event, context):
         'body': file_get_contents("index.html").replace('###loginPage###', login_page)
     }
 
-
 def file_get_contents(filename):
     with open(filename) as f:
         return f.read()
