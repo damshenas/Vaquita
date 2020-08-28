@@ -8,6 +8,9 @@ import botocore
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+queue_name = os.environ["VAQUITA_IMAGE_MASSAGE"]
+sqs = boto3.resource('sqs')
+
 def handler(event, context):
     s3 = boto3.resource('s3')
 
@@ -18,34 +21,32 @@ def handler(event, context):
         localfile = "/tmp/{}".format(name)
 
         # download the file
-        newKeyObj = s3.Object(bucket, newKey)
-        newKeyObj.download_file(localfile)
+        new_key_obj = s3.Object(bucket, newKey)
+        new_key_obj.download_file(localfile)
 
         # calc hash
-        imageSHA1 = getSha1(localfile)
+        image_SHA1 = getSha1(localfile)
 
         # check if not exist
-        processedKey = "processed/{}/{}".format(imageSHA1[:2], imageSHA1)
-        keyIsProcessed = isS3ObjectExist(bucket, processedKey)
-        if keyIsProcessed: continue
+        processed_key = "processed/{}/{}".format(image_SHA1[:2], image_SHA1)
+        key_is_processed = isS3ObjectExist(bucket, processed_key)
+        if key_is_processed: continue
 
         # add to the queue
         message = json.dumps({
-            "image": processedKey,
+            "image": processed_key,
             "original_key": newKey,
-            "original_last_modified": newKeyObj.last_modified,
-            "etag": newKeyObj.e_tag
+            "original_last_modified": new_key_obj.last_modified,
+            "etag": new_key_obj.e_tag
         }, default=str)
 
-        queueName = os.environ["VAQUITA_IMAGE_MASSAGE"]
-        sqs = boto3.resource('sqs')
-        queue = sqs.get_queue_by_name(QueueName=queueName)
+        queue = sqs.get_queue_by_name(QueueName=queue_name)
         response = queue.send_message(MessageBody=message)
         logger.info("Message {} has been sent.".format(response.get('MessageId')))
 
         #move the image
-        s3.Object(bucket, processedKey).copy_from(CopySource="{}/{}".format(bucket,newKey))
-        newKeyObj.delete()
+        s3.Object(bucket, processed_key).copy_from(CopySource="{}/{}".format(bucket,newKey))
+        new_key_obj.delete()
 
         # delete local file
         os.remove(localfile)

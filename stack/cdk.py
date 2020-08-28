@@ -35,37 +35,37 @@ class VaquitaStack(core.Stack):
         super().__init__(scope, id, **kwargs)
 
         ### S3 core
-        imagesS3Bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
+        images_S3_bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
 
-        imagesS3Bucket.add_cors_rule(
+        images_S3_bucket.add_cors_rule(
             allowed_methods=[_s3.HttpMethods.POST],
             allowed_origins=["*"] # add API gateway web resource URL
         )
 
         ### SQS core
-        imageDeadletterQueue = _sqs.Queue(self, "VAQUITA_IMAGES_DEADLETTER_QUEUE")
-        imageQueue = _sqs.Queue(self, "VAQUITA_IMAGES_QUEUE",
+        image_deadletter_queue = _sqs.Queue(self, "VAQUITA_IMAGES_DEADLETTER_QUEUE")
+        image_queue = _sqs.Queue(self, "VAQUITA_IMAGES_QUEUE",
             dead_letter_queue={
                 "max_receive_count": 3,
-                "queue": imageDeadletterQueue
+                "queue": image_deadletter_queue
             })
 
         ### api gateway core
-        apiGateway = _apigw.RestApi(self, 'VAQUITA_API_GATEWAY', rest_api_name='VaquitaApiGateway')
-        apiGatewayResource = apiGateway.root.add_resource('vaquita')
-        apiGatewayLandingPageResource = apiGatewayResource.add_resource('web')
-        apiGatewayGetSignedUrlResource = apiGatewayResource.add_resource('signedUrl')
-        apiGatewayImageSearchResource = apiGatewayResource.add_resource('search')
+        api_gateway = _apigw.RestApi(self, 'VAQUITA_API_GATEWAY', rest_api_name='VaquitaApiGateway')
+        api_gateway_resource = api_gateway.root.add_resource('vaquita')
+        api_gateway_landing_page_resource = api_gateway_resource.add_resource('web')
+        api_gateway_get_signedurl_resource = api_gateway_resource.add_resource('signedUrl')
+        api_gateway_image_search_resource = api_gateway_resource.add_resource('search')
 
         ### landing page function
-        getLandingPageFunction = _lambda.Function(self, "VAQUITA_GET_LANDING_PAGE",
+        get_landing_page_function = _lambda.Function(self, "VAQUITA_GET_LANDING_PAGE",
             function_name="VAQUITA_GET_LANDING_PAGE",
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/landingPage"))
 
-        getLandingPageIntegration = _apigw.LambdaIntegration(
-            getLandingPageFunction, 
+        get_landing_page_integration = _apigw.LambdaIntegration(
+            get_landing_page_function, 
             proxy=True, 
             integration_responses=[{
                 'statusCode': '200',
@@ -74,7 +74,7 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        apiGatewayLandingPageResource.add_method('GET', getLandingPageIntegration,
+        api_gateway_landing_page_resource.add_method('GET', get_landing_page_integration,
             method_responses=[{
                 'statusCode': '200',
                 'responseParameters': {
@@ -85,34 +85,34 @@ class VaquitaStack(core.Stack):
         ### cognito
         required_attribute = _cognito.StandardAttribute(required=True)
 
-        usersPool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
+        users_pool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
             auto_verify=_cognito.AutoVerifiedAttrs(email=True), #required for self sign-up
             standard_attributes=_cognito.StandardAttributes(email=required_attribute), #required for self sign-up
             self_sign_up_enabled=True)
 
-        userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
+        user_pool_app_client = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
             supported_identity_providers=["COGNITO"],
             allowed_o_auth_flows=["implicit"],
             allowed_o_auth_scopes=["phone", "email", "openid", "profile"],
-            user_pool_id=usersPool.user_pool_id,
-            callback_ur_ls=[apiGatewayLandingPageResource.url],
+            user_pool_id=users_pool.user_pool_id,
+            callback_ur_ls=[api_gateway_landing_page_resource.url],
             allowed_o_auth_flows_user_pool_client=True,
             explicit_auth_flows=["ALLOW_REFRESH_TOKEN_AUTH"])
 
-        userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
-            user_pool=usersPool, 
+        user_pool_domain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
+            user_pool=users_pool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
         ### get signed URL function
-        getSignedUrlFunction = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
+        get_signedurl_function = _lambda.Function(self, "VAQUITA_GET_SIGNED_URL",
             function_name="VAQUITA_GET_SIGNED_URL",
-            environment={"VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name},
+            environment={"VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name},
             runtime=_lambda.Runtime.PYTHON_3_7,
             handler="main.handler",
             code=_lambda.Code.asset("./src/getSignedUrl"))
 
-        getSignedUrlIntegration = _apigw.LambdaIntegration(
-            getSignedUrlFunction, 
+        get_signedurl_integration = _apigw.LambdaIntegration(
+            get_signedurl_function, 
             proxy=True, 
             integration_responses=[{
                 'statusCode': '200',
@@ -121,14 +121,14 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        apiGatewayGetSignedUrlAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
-            rest_api_id=apiGatewayGetSignedUrlResource.rest_api.rest_api_id,
+        api_gateway_get_signedurl_authorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
+            rest_api_id=api_gateway_get_signedurl_resource.rest_api.rest_api_id,
             name="VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
             type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
             identity_source="method.request.header.Authorization",
-            provider_arns=[usersPool.user_pool_arn])
+            provider_arns=[users_pool.user_pool_arn])
 
-        apiGatewayGetSignedUrlResource.add_method('GET', getSignedUrlIntegration,
+        api_gateway_get_signedurl_resource.add_method('GET', get_signedurl_integration,
             authorization_type=_apigw.AuthorizationType.COGNITO,
             method_responses=[{
                 'statusCode': '200',
@@ -136,46 +136,46 @@ class VaquitaStack(core.Stack):
                     'method.response.header.Access-Control-Allow-Origin': True,
                 }
             }]
-            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayGetSignedUrlAuthorizer.ref)
+            ).node.find_child('Resource').add_property_override('AuthorizerId', api_gateway_get_signedurl_authorizer.ref)
 
-        imagesS3Bucket.grant_put(getSignedUrlFunction, objects_key_pattern="new/*")
+        images_S3_bucket.grant_put(get_signedurl_function, objects_key_pattern="new/*")
 
         ### image massage function
-        imageMassageFunction = _lambda.Function(self, "VAQUITA_IMAGE_MASSAGE",
+        image_massage_function = _lambda.Function(self, "VAQUITA_IMAGE_MASSAGE",
             function_name="VAQUITA_IMAGE_MASSAGE",
             timeout=core.Duration.seconds(6),
             runtime=_lambda.Runtime.PYTHON_3_7,
-            environment={"VAQUITA_IMAGE_MASSAGE": imageQueue.queue_name},
+            environment={"VAQUITA_IMAGE_MASSAGE": image_queue.queue_name},
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageMassage"))
 
-        imagesS3Bucket.grant_write(imageMassageFunction, "processed/*")
-        imagesS3Bucket.grant_delete(imageMassageFunction, "new/*")
-        imagesS3Bucket.grant_read(imageMassageFunction, "new/*")
+        images_S3_bucket.grant_write(image_massage_function, "processed/*")
+        images_S3_bucket.grant_delete(image_massage_function, "new/*")
+        images_S3_bucket.grant_read(image_massage_function, "new/*")
         
-        newImageAddedNotification = _s3notification.LambdaDestination(imageMassageFunction)
+        new_image_added_notification = _s3notification.LambdaDestination(image_massage_function)
 
-        imagesS3Bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, 
-            newImageAddedNotification, 
+        images_S3_bucket.add_event_notification(_s3.EventType.OBJECT_CREATED, 
+            new_image_added_notification, 
             _s3.NotificationKeyFilter(prefix="new/")
             )
 
-        imageQueue.grant_send_messages(imageMassageFunction)
+        image_queue.grant_send_messages(image_massage_function)
 
         ### image analyzer function
-        imageAnalyzerFunction = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
+        image_analyzer_function = _lambda.Function(self, "VAQUITA_IMAGE_ANALYSIS",
             function_name="VAQUITA_IMAGE_ANALYSIS",
             runtime=_lambda.Runtime.PYTHON_3_7,
             timeout=core.Duration.seconds(10),
             environment={
-                "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
+                "VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name,
                 "REGION": core.Aws.REGION,
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis")) 
 
-        imageAnalyzerFunction.add_event_source(_lambda_event_source.SqsEventSource(queue=imageQueue, batch_size=10))
-        imageQueue.grant_consume_messages(imageMassageFunction)
+        image_analyzer_function.add_event_source(_lambda_event_source.SqsEventSource(queue=image_queue, batch_size=10))
+        image_queue.grant_consume_messages(image_massage_function)
 
         lambda_rekognition_access = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
@@ -183,13 +183,13 @@ class VaquitaStack(core.Stack):
             resources=["*"]                    
         )
 
-        imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
-        imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
+        image_analyzer_function.add_to_role_policy(lambda_rekognition_access)
+        images_S3_bucket.grant_read(image_analyzer_function, "processed/*")
 
         ### API gateway finalizing
-        self.add_cors_options(apiGatewayGetSignedUrlResource)
-        self.add_cors_options(apiGatewayLandingPageResource)
-        self.add_cors_options(apiGatewayImageSearchResource)
+        self.add_cors_options(api_gateway_get_signedurl_resource)
+        self.add_cors_options(api_gateway_landing_page_resource)
+        self.add_cors_options(api_gateway_image_search_resource)
 
         ### secret manager
 
@@ -259,7 +259,7 @@ class VaquitaStack(core.Stack):
             code=_lambda.Code.asset("./src/imageData")
         ) 
 
-        imageSearchIntegration = _apigw.LambdaIntegration(
+        image_search_integration = _apigw.LambdaIntegration(
             image_data_function, 
             proxy=True, 
             integration_responses=[{
@@ -269,14 +269,14 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        apiGatewayImageSearchAuthorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
-            rest_api_id=apiGatewayImageSearchResource.rest_api.rest_api_id,
+        api_gateway_image_search_authorizer = _apigw.CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+            rest_api_id=api_gateway_image_search_resource.rest_api.rest_api_id,
             name="VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
             type="COGNITO_USER_POOLS", #_apigw.AuthorizationType.COGNITO,
             identity_source="method.request.header.Authorization",
-            provider_arns=[usersPool.user_pool_arn])
+            provider_arns=[users_pool.user_pool_arn])
 
-        apiGatewayImageSearchResource.add_method('POST', imageSearchIntegration,
+        api_gateway_image_search_resource.add_method('POST', image_search_integration,
             authorization_type=_apigw.AuthorizationType.COGNITO,
             method_responses=[{
                 'statusCode': '200',
@@ -284,7 +284,7 @@ class VaquitaStack(core.Stack):
                     'method.response.header.Access-Control-Allow-Origin': True,
                 }
             }]
-            ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayImageSearchAuthorizer.ref)
+            ).node.find_child('Resource').add_property_override('AuthorizerId', api_gateway_image_search_authorizer.ref)
 
 
         lambda_access_search = _iam.PolicyStatement(
@@ -316,17 +316,17 @@ class VaquitaStack(core.Stack):
             rule_name="VAQUITA_IMAGE_CONTENT_RULE",
             description="The event from image analyzer to store the data",
             event_bus=event_bus,
-            event_pattern=_events.EventPattern(resources=[imageAnalyzerFunction.function_arn]),
+            event_pattern=_events.EventPattern(resources=[image_analyzer_function.function_arn]),
         )
 
         event_rule.add_target(_event_targets.LambdaFunction(image_data_function))
 
-        event_bus.grant_put_events(imageAnalyzerFunction)
-        imageAnalyzerFunction.add_environment("EVENT_BUS", event_bus.event_bus_name)
+        event_bus.grant_put_events(image_analyzer_function)
+        image_analyzer_function.add_environment("EVENT_BUS", event_bus.event_bus_name)
 
         ### outputs
         core.CfnOutput(self, 'CognitoHostedUILogin',
-            value='https://{}.auth.{}.amazoncognito.com/login?client_id={}&response_type=token&scope={}&redirect_uri={}'.format(userPoolDomain.domain_name, core.Aws.REGION, userPoolAppClient.ref, '+'.join(userPoolAppClient.allowed_o_auth_scopes), apiGatewayLandingPageResource.url),
+            value='https://{}.auth.{}.amazoncognito.com/login?client_id={}&response_type=token&scope={}&redirect_uri={}'.format(user_pool_domain.domain_name, core.Aws.REGION, user_pool_app_client.ref, '+'.join(user_pool_app_client.allowed_o_auth_scopes), api_gateway_landing_page_resource.url),
             description='The Cognito Hosted UI Login Page'
         )
 
