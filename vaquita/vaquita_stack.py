@@ -5,11 +5,9 @@ from aws_cdk import (
     aws_s3 as _s3,
     aws_cognito as _cognito,
     aws_sqs as _sqs,
-    # aws_cloudfront as _cloudFront,
-    aws_elasticsearch as _esearch,
+    aws_dynamodb as _dydb,
     aws_apigateway as _apigw,
     aws_iam as _iam,
-    # aws_ec2 as _ec2,
     core
 )
 
@@ -45,31 +43,29 @@ class VaquitaStack(core.Stack):
         apiGatewayGetSignedUrlResource = apiGatewayResource.add_resource('signedUrl')
         apiGatewayImageSearchResource = apiGatewayResource.add_resource('search')
 
-        ### elastic search
-        esearchDocument = _iam.PolicyDocument()
-        esearchStatement = _iam.PolicyStatement(
-            effect=_iam.Effect.ALLOW, 
-            actions=["es:*",]
+        ### create dynamo table
+        dynamodb_table = _dydb.Table(
+            self, "VAQUITA_TABLE",
+            partition_key=_dydb.Attribute(
+                name="id",
+                type=_dydb.AttributeType.STRING
+            ),
+            sort_key=_dydb.Attribute(
+                name="label",
+                type=_dydb.AttributeType.STRING
+            ),
+            billing_mode=_dydb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=core.RemovalPolicy.DESTROY # NOT recommended for production code
         )
 
-        esearchStatement.add_aws_account_principal(core.Aws.ACCOUNT_ID)
-        esearchStatement.add_resources("arn:aws:es:{}:{}:domain/VAQUITA_ELASTIC_SEARCH/*".format(core.Aws.REGION, core.Aws.ACCOUNT_ID))
-        esearchDocument.add_statements(esearchStatement)
-
-        elasticSearch = _esearch.CfnDomain(self, "VAQUITA_ELASTIC_SEARCH",
-            elasticsearch_version="2.3",
-            access_policies=esearchDocument,
-            elasticsearch_cluster_config={
-                "InstanceCount": "1",
-                "InstanceType": "t2.micro.elasticsearch",
-                "DedicatedMasterEnabled": False,
-                "zoneAwarenessEnabled": False,
-                },
-            ebs_options={
-                "ebsEnabled": True, 
-                "volumeSize": 10
-                }
-            )
+        dynamodb_table.add_global_secondary_index(
+            index_name='VAQUITA_TABLE_LABEL_INDEX',
+            partition_key=_dydb.Attribute(
+                name="label",
+                type=_dydb.AttributeType.STRING
+            ),
+            projection_type=_dydb.ProjectionType.KEYS_ONLY
+        )
 
         ### landing page function
         getLandingPageFunction = _lambda.Function(self, "VAQUITA_GET_LANDING_PAGE",
@@ -97,11 +93,14 @@ class VaquitaStack(core.Stack):
             }])
 
         ### cognito
+        required_attribute = _cognito.StandardAttribute(required=True)
+
         usersPool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
-            auto_verify={"email": True},
+            auto_verify=_cognito.AutoVerifiedAttrs(email=True), #required for self sign-up
+            standard_attributes=_cognito.StandardAttributes(email=required_attribute), #required for self sign-up
             self_sign_up_enabled=True)
 
-        self.userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
+        userPoolAppClient = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
             supported_identity_providers=["COGNITO"],
             allowed_o_auth_flows=["implicit"],
             allowed_o_auth_scopes=["phone", "email", "openid", "profile"],
@@ -110,7 +109,7 @@ class VaquitaStack(core.Stack):
             allowed_o_auth_flows_user_pool_client=True,
             explicit_auth_flows=["ALLOW_REFRESH_TOKEN_AUTH"])
 
-        self.userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
+        userPoolDomain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
             user_pool=usersPool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix="vaquita"))
 
@@ -181,8 +180,7 @@ class VaquitaStack(core.Stack):
             environment={
                 "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
                 "REGION": core.Aws.REGION,
-                "ES_HOST": elasticSearch.attr_domain_endpoint,
-                "ES_INDEX": "images"
+                "TABLE_NAME": dynamodb_table.table_name
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageAnalysis")) 
@@ -196,15 +194,9 @@ class VaquitaStack(core.Stack):
             resources=["*"]                    
         )
 
-        lambda_elasticsearch_access_analyzer = _iam.PolicyStatement(
-            effect=_iam.Effect.ALLOW, 
-            actions=["es:ESHttp*"],
-            resources=["*"] #tbc [elasticSearch.attr_arn]              
-        ) 
-
         imageAnalyzerFunction.add_to_role_policy(lambda_rekognition_access)
-        imageAnalyzerFunction.add_to_role_policy(lambda_elasticsearch_access_analyzer)
         imagesS3Bucket.grant_read(imageAnalyzerFunction, "processed/*")
+        dynamodb_table.grant_write_data(imageAnalyzerFunction)
         
         ### image search function
         imageSearchFunction = _lambda.Function(self, "VAQUITA_IMAGE_SEARCH",
@@ -214,8 +206,7 @@ class VaquitaStack(core.Stack):
             environment={
                 "VAQUITA_IMAGES_BUCKET": imagesS3Bucket.bucket_name,
                 "REGION": core.Aws.REGION,
-                "ES_HOST": elasticSearch.attr_domain_endpoint,
-                "ES_INDEX": "images"
+                "TABLE_NAME": dynamodb_table.table_name
                 },
             handler="main.handler",
             code=_lambda.Code.asset("./src/imageSearch"))
@@ -248,34 +239,24 @@ class VaquitaStack(core.Stack):
             ).node.find_child('Resource').add_property_override('AuthorizerId', apiGatewayImageSearchAuthorizer.ref)
 
 
-        lambda_elasticsearch_access_search = _iam.PolicyStatement(
+        lambda_access_search = _iam.PolicyStatement(
             effect=_iam.Effect.ALLOW, 
-            actions=["es:ESHttp*", "translate:TranslateText"],
+            actions=["dynamodb:Query", "translate:TranslateText"],
             resources=["*"] #tbc [elasticSearch.attr_arn]              
         ) 
 
-        imageSearchFunction.add_to_role_policy(lambda_elasticsearch_access_search)
+        imageSearchFunction.add_to_role_policy(lambda_access_search)
 
         ### API gateway finalizing
         self.add_cors_options(apiGatewayGetSignedUrlResource)
         self.add_cors_options(apiGatewayLandingPageResource)
         self.add_cors_options(apiGatewayImageSearchResource)
 
-        ### cloud front tbc
-        # _cloudFront.CloudFrontWebDistribution(self, "VAQUITA_CLOUDFRONT",
-        #                         price_class=_cloudFront.PriceClass.PRICE_CLASS_100,
-        #                         origin_configs=[
-        #                             _cloudFront.SourceConfiguration(
-        #                                 behaviors=[
-        #                                     _cloudFront.Behavior(
-        #                                         is_default_behavior=True)
-        #                                 ],
-        #                                 s3_origin_source=_cloudFront.S3OriginConfig(
-        #                                     s3_bucket_source=bucket
-        #                                 )
-        #                             )
-        #                         ]
-        #                         )
+        ### outputs
+        core.CfnOutput(self, 'CognitoHostedUILogin',
+            value='https://{}.auth.{}.amazoncognito.com/login?client_id={}&response_type=token&scope={}&redirect_uri={}'.format(userPoolDomain.domain_name, core.Aws.REGION, userPoolAppClient.ref, '+'.join(userPoolAppClient.allowed_o_auth_scopes), apiGatewayLandingPageResource.url),
+            description='The Cognito Hosted UI Login Page'
+        )
 
     def add_cors_options(self, apigw_resource):
         apigw_resource.add_method('OPTIONS', _apigw.MockIntegration(

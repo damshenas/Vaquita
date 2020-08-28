@@ -14,6 +14,12 @@
     var idToken = authData.split('&').find((rec) => rec.split('=')[0] == 'id_token').split('=')[1]
     var getSignedUrlEndpoint = window.location.href.split('#')[0].replace('web', 'signedUrl')
     var searchImageEndpoint = window.location.href.split('#')[0].replace('web', 'search')
+    var loginPage = '###loginPage###';
+    var logoutPage = loginPage.replace('login', 'logout');
+
+    function logout() {
+      window.location.replace(logoutPage);
+    }
 
     function getSignedUrl() {
       $.ajax({
@@ -34,35 +40,36 @@
           },
           error: function (error) {
             console.log(error);
+            if (error.status == 401) {logout();}
           }
         });
     }
 
-    function getOffensivePhotosReport() {
-
-      var formData = {
-            'offensive': 'true'
-      };
-
+    function listImagesByLabel(outputTab, label, language, country) {
+      console.log('Finding images with label: ' + label);
+      
+      var formData = language ? {label, language, country} : {label}
+      
       $.ajax({
-        url: 'https://5kcl2f8eb1.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint,
+        url: searchImageEndpoint,
         headers: { 'Authorization': idToken },
         type: "POST",
         data: formData,
         contentType: 'application/json; charset=utf-8',
         success: function (results) {
           console.log(results);
-          $("#report_image_result tr").remove();
-          $("#report_image_result th").remove();
+          $(outputTab + " tr").remove();
+          $(outputTab + " th").remove();
           if (results) {
-            $('#report_image_result').append( '<tr><th>Image ID</th><th>Labels</th></tr>' );
+            $(outputTab).append( '<tr><th>Image ID</th></tr>' );
             results.forEach(item => {
-              $('#report_image_result').append( '<tr><td>' + item.id + '</th><th>' + item.labels.join() + '</th></tr>' );
+              $(outputTab).append( '<tr><td>' + item.id + '</th></tr>' );
             });
           }
         },
         error: function (error) {
-          console.log(error);
+          console.log(error.responseText, error.status);
+          if (error.status == 401) {logout();}
         }
       });
 
@@ -78,43 +85,11 @@
 
     function submitSearchQuery() {
       event.preventDefault();    
+      var language = $('#language').val();
+      var country = $('#country').val();
+      var label = $('input[name=label]').val();
 
-      // var formData = new FormData();
-      // $('#search_image_form *').filter(':input').filter(":text").each(function(k, v){
-      //   formData.append(v.name, v.defaultValue);
-      // });
-
-      var formData = {
-            'language': $('#language').val(),
-            'country': $('#country').val(),
-            'label': $('input[name=label]').val()
-      };
-
-      console.log('searching');
-
-      $.ajax({
-        url: 'https://5kcl2f8eb1.execute-api.eu-central-1.amazonaws.com/prod/vaquita/search', //searchImageEndpoint,
-        headers: { 'Authorization': idToken },
-        type: "POST",
-        data: formData,
-        contentType: 'application/json; charset=utf-8',
-        success: function (result) {
-          console.log(result);
-
-          $("#search_image_result tr").remove();
-          $("#search_image_result th").remove();
-          if (result) {
-            $('#search_image_result').append( '<tr><th>Image ID</th><th>Labels</th></tr>' );
-            result.forEach(item => {
-              $('#search_image_result').append( '<tr><td>' + item.id + '</th><th>' + item.labels.join() + '</th></tr>' );
-            });
-          }
-        },
-        error: function (error) {
-          console.log(error);
-        }
-      });
-
+      listImagesByLabel('#search_image_result', label, language, country);
     }
 
     function openTab(evt, tabName) {
@@ -127,7 +102,7 @@
       }
 
       if (tabName == 'report') {
-        getOffensivePhotosReport();
+        listImagesByLabel('#report_image_result', 'offensive');
       }
 
       var i, tabcontent, tablinks;
@@ -188,7 +163,7 @@
       <button class="tablinks" onclick="openTab(event, 'upload')" id="default_tab">Upload</button>
       <button class="tablinks" onclick="openTab(event, 'search')">Search</button>
       <button class="tablinks" onclick="openTab(event, 'report')">Report</button>
-      <button class="tablinks" onclick="" style="float: right;">Logout</button>
+      <button class="tablinks" onclick="logout()" style="float: right;">Logout</button>
     </div>
 
     <div id="upload" class="tabcontent">

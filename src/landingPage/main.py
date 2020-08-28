@@ -7,12 +7,14 @@ import http.client
 from botocore.exceptions import ClientError
 
 def handler(event, context):
+    login_page = event["headers"]["Referer"]
+
     return {
         'statusCode': 200,
         'headers': {
             'Content-Type': 'text/html'
         },
-        'body': file_get_contents("upload.html")
+        'body': file_get_contents("index.html").replace('###loginPage###', login_page)
     }
 
 
