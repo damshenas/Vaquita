@@ -1,14 +1,14 @@
 Environment: Development
 Author: Mohsen
 Region: eu-central-1
-ProjectName: vaquita
+ProjectName: ImageContentSearch
 
 DeadLetterQueue:
     MaxReceiveCount: 3
 
 Cognito:
     SelfSignUp: True
-    DomainPrefix: vaquita
+    DomainPrefix: image-content-search
     AllowedOAuthScopes:
         - phone
         - email

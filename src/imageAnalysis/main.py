@@ -28,7 +28,7 @@ def handler(event, context):
         body = record['body']
         message = json.loads(body)
 
-        bucket = os.environ['VAQUITA_IMAGES_BUCKET']
+        bucket = os.environ['ICS_IMAGES_BUCKET']
         key = message['image']
         # original_key = message['original_key']
         # original_last_modified = message['original_last_modified']

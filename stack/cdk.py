@@ -38,7 +38,7 @@ from aws_cdk.custom_resources import (
     Provider
 )
 
-class VaquitaStack(core.Stack):
+class ImageContentSearchStack(core.Stack):
 
     def __init__(self, scope: core.Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
@@ -47,7 +47,7 @@ class VaquitaStack(core.Stack):
             configs = yaml.safe_load(stream)
 
         ### S3 core
-        images_S3_bucket = _s3.Bucket(self, "VAQUITA_IMAGES")
+        images_S3_bucket = _s3.Bucket(self, "ICS_IMAGES")
 
         images_S3_bucket.add_cors_rule(
             allowed_methods=[_s3.HttpMethods.POST],
@@ -55,23 +55,23 @@ class VaquitaStack(core.Stack):
         )
 
         ### SQS core
-        image_deadletter_queue = _sqs.Queue(self, "VAQUITA_IMAGES_DEADLETTER_QUEUE")
-        image_queue = _sqs.Queue(self, "VAQUITA_IMAGES_QUEUE",
+        image_deadletter_queue = _sqs.Queue(self, "ICS_IMAGES_DEADLETTER_QUEUE")
+        image_queue = _sqs.Queue(self, "ICS_IMAGES_QUEUE",
             dead_letter_queue={
                 "max_receive_count": configs["DeadLetterQueue"]["MaxReceiveCount"],
                 "queue": image_deadletter_queue
             })
 
         ### api gateway core
-        api_gateway = RestApi(self, 'VAQUITA_API_GATEWAY', rest_api_name='VaquitaApiGateway')
+        api_gateway = RestApi(self, 'ICS_API_GATEWAY', rest_api_name='ImageContentSearchApiGateway')
         api_gateway_resource = api_gateway.root.add_resource(configs["ProjectName"])
         api_gateway_landing_page_resource = api_gateway_resource.add_resource('web')
         api_gateway_get_signedurl_resource = api_gateway_resource.add_resource('signedUrl')
         api_gateway_image_search_resource = api_gateway_resource.add_resource('search')
 
         ### landing page function
-        get_landing_page_function = Function(self, "VAQUITA_GET_LANDING_PAGE",
-            function_name="VAQUITA_GET_LANDING_PAGE",
+        get_landing_page_function = Function(self, "ICS_GET_LANDING_PAGE",
+            function_name="ICS_GET_LANDING_PAGE",
             runtime=Runtime.PYTHON_3_7,
             handler="main.handler",
             code=Code.asset("./src/landingPage"))
@@ -97,12 +97,12 @@ class VaquitaStack(core.Stack):
         ### cognito
         required_attribute = _cognito.StandardAttribute(required=True)
 
-        users_pool = _cognito.UserPool(self, "VAQUITA_USERS_POOL",
+        users_pool = _cognito.UserPool(self, "ICS_USERS_POOL",
             auto_verify=_cognito.AutoVerifiedAttrs(email=True), #required for self sign-up
             standard_attributes=_cognito.StandardAttributes(email=required_attribute), #required for self sign-up
             self_sign_up_enabled=configs["Cognito"]["SelfSignUp"])
 
-        user_pool_app_client = _cognito.CfnUserPoolClient(self, "VAQUITA_USERS_POOL_APP_CLIENT", 
+        user_pool_app_client = _cognito.CfnUserPoolClient(self, "ICS_USERS_POOL_APP_CLIENT", 
             supported_identity_providers=["COGNITO"],
             allowed_o_auth_flows=["implicit"],
             allowed_o_auth_scopes=configs["Cognito"]["AllowedOAuthScopes"],
@@ -111,15 +111,15 @@ class VaquitaStack(core.Stack):
             allowed_o_auth_flows_user_pool_client=True,
             explicit_auth_flows=["ALLOW_REFRESH_TOKEN_AUTH"])
 
-        user_pool_domain = _cognito.UserPoolDomain(self, "VAQUITA_USERS_POOL_DOMAIN", 
+        user_pool_domain = _cognito.UserPoolDomain(self, "ICS_USERS_POOL_DOMAIN", 
             user_pool=users_pool, 
             cognito_domain=_cognito.CognitoDomainOptions(domain_prefix=configs["Cognito"]["DomainPrefix"]))
 
         ### get signed URL function
-        get_signedurl_function = Function(self, "VAQUITA_GET_SIGNED_URL",
-            function_name="VAQUITA_GET_SIGNED_URL",
+        get_signedurl_function = Function(self, "ICS_GET_SIGNED_URL",
+            function_name="ICS_GET_SIGNED_URL",
             environment={
-                "VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name,
+                "ICS_IMAGES_BUCKET": images_S3_bucket.bucket_name,
                 "DEFAULT_SIGNEDURL_EXPIRY_SECONDS": configs["Functions"]["DefaultSignedUrlExpirySeconds"]
             },
             runtime=Runtime.PYTHON_3_7,
@@ -136,9 +136,9 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        api_gateway_get_signedurl_authorizer = CfnAuthorizer(self, "VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
+        api_gateway_get_signedurl_authorizer = CfnAuthorizer(self, "ICS_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
             rest_api_id=api_gateway_get_signedurl_resource.rest_api.rest_api_id,
-            name="VAQUITA_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
+            name="ICS_API_GATEWAY_GET_SIGNED_URL_AUTHORIZER",
             type="COGNITO_USER_POOLS",
             identity_source="method.request.header.Authorization",
             provider_arns=[users_pool.user_pool_arn])
@@ -156,11 +156,11 @@ class VaquitaStack(core.Stack):
         images_S3_bucket.grant_put(get_signedurl_function, objects_key_pattern="new/*")
 
         ### image massage function
-        image_massage_function = Function(self, "VAQUITA_IMAGE_MASSAGE",
-            function_name="VAQUITA_IMAGE_MASSAGE",
+        image_massage_function = Function(self, "ICS_IMAGE_MASSAGE",
+            function_name="ICS_IMAGE_MASSAGE",
             timeout=core.Duration.seconds(6),
             runtime=Runtime.PYTHON_3_7,
-            environment={"VAQUITA_IMAGE_MASSAGE": image_queue.queue_name},
+            environment={"ICS_IMAGE_MASSAGE": image_queue.queue_name},
             handler="main.handler",
             code=Code.asset("./src/imageMassage"))
 
@@ -178,12 +178,12 @@ class VaquitaStack(core.Stack):
         image_queue.grant_send_messages(image_massage_function)
 
         ### image analyzer function
-        image_analyzer_function = Function(self, "VAQUITA_IMAGE_ANALYSIS",
-            function_name="VAQUITA_IMAGE_ANALYSIS",
+        image_analyzer_function = Function(self, "ICS_IMAGE_ANALYSIS",
+            function_name="ICS_IMAGE_ANALYSIS",
             runtime=Runtime.PYTHON_3_7,
             timeout=core.Duration.seconds(10),
             environment={
-                "VAQUITA_IMAGES_BUCKET": images_S3_bucket.bucket_name,
+                "ICS_IMAGES_BUCKET": images_S3_bucket.bucket_name,
                 "DEFAULT_MAX_CALL_ATTEMPTS": configs["Functions"]["DefaultMaxApiCallAttempts"],
                 "REGION": core.Aws.REGION,
                 },
@@ -208,16 +208,18 @@ class VaquitaStack(core.Stack):
         self.add_cors_options(api_gateway_image_search_resource)
 
         ### database 
-        database_secret = _secrets_manager.Secret(self, "VAQUITA_DATABASE_SECRET",
-            secret_name="rds-db-credentials/vaquita-rds-secret",
+        database_secret = _secrets_manager.Secret(self, "ICS_DATABASE_SECRET",
+            secret_name="rds-db-credentials/image-content-search-rds-secret",
             generate_secret_string=_secrets_manager.SecretStringGenerator(
                 generate_string_key='password',
                 secret_string_template='{"username": "dba"}',
+                exclude_punctuation=True,
+                exclude_characters='/@\" \\\'',
                 require_each_included_type=True
             )
         )
 
-        database = _rds.CfnDBCluster(self, "VAQUITA_DATABASE",
+        database = _rds.CfnDBCluster(self, "ICS_DATABASE",
             engine=_rds.DatabaseClusterEngine.aurora_mysql(version=_rds.AuroraMysqlEngineVersion.VER_5_7_12).engine_type,
             engine_mode="serverless",
             database_name=configs["Database"]["Name"],
@@ -235,7 +237,7 @@ class VaquitaStack(core.Stack):
 
         database_cluster_arn = "arn:aws:rds:{}:{}:cluster:{}".format(core.Aws.REGION, core.Aws.ACCOUNT_ID, database.ref)
    
-        secret_target = _secrets_manager.CfnSecretTargetAttachment(self,"VAQUITA_DATABASE_SECRET_TARGET",
+        secret_target = _secrets_manager.CfnSecretTargetAttachment(self,"ICS_DATABASE_SECRET_TARGET",
             target_type="AWS::RDS::DBCluster",
             target_id=database.ref,
             secret_id=database_secret.secret_arn
@@ -244,8 +246,8 @@ class VaquitaStack(core.Stack):
         secret_target.node.add_dependency(database)
 
         ### database function
-        image_data_function_role = _iam.Role(self, "VAQUITA_IMAGE_DATA_FUNCTION_ROLE",
-            role_name="VAQUITA_IMAGE_DATA_FUNCTION_ROLE",
+        image_data_function_role = _iam.Role(self, "ICS_IMAGE_DATA_FUNCTION_ROLE",
+            role_name="ICS_IMAGE_DATA_FUNCTION_ROLE",
             assumed_by=_iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
                 _iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaVPCAccessExecutionRole"),
@@ -254,8 +256,8 @@ class VaquitaStack(core.Stack):
             ]
         )
         
-        image_data_function = Function(self, "VAQUITA_IMAGE_DATA",
-            function_name="VAQUITA_IMAGE_DATA",
+        image_data_function = Function(self, "ICS_IMAGE_DATA",
+            function_name="ICS_IMAGE_DATA",
             runtime=Runtime.PYTHON_3_7,
             timeout=core.Duration.seconds(5),
             role=image_data_function_role,
@@ -280,9 +282,9 @@ class VaquitaStack(core.Stack):
                 }
             }])
 
-        api_gateway_image_search_authorizer = CfnAuthorizer(self, "VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+        api_gateway_image_search_authorizer = CfnAuthorizer(self, "ICS_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
             rest_api_id=api_gateway_image_search_resource.rest_api.rest_api_id,
-            name="VAQUITA_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
+            name="ICS_API_GATEWAY_IMAGE_SEARCH_AUTHORIZER",
             type="COGNITO_USER_POOLS", 
             identity_source="method.request.header.Authorization",
             provider_arns=[users_pool.user_pool_arn])
@@ -307,11 +309,11 @@ class VaquitaStack(core.Stack):
         image_data_function.add_to_role_policy(lambda_access_search)
 
         ### custom resource
-        lambda_provider = Provider(self, 'VAQUITA_IMAGE_DATA_PROVIDER', 
+        lambda_provider = Provider(self, 'ICS_IMAGE_DATA_PROVIDER', 
             on_event_handler=image_data_function
         )
 
-        core.CustomResource(self, 'VAQUITA_IMAGE_DATA_RESOURCE', 
+        core.CustomResource(self, 'ICS_IMAGE_DATA_RESOURCE', 
             service_token=lambda_provider.service_token,
             pascal_case_properties=False,
             resource_type="Custom::SchemaCreation",
@@ -321,10 +323,10 @@ class VaquitaStack(core.Stack):
         )
 
         ### event bridge
-        event_bus = _events.EventBus(self, "VAQUITA_IMAGE_CONTENT_BUS")
+        event_bus = _events.EventBus(self, "ICS_IMAGE_CONTENT_BUS")
 
-        event_rule = _events.Rule(self, "VAQUITA_IMAGE_CONTENT_RULE",
-            rule_name="VAQUITA_IMAGE_CONTENT_RULE",
+        event_rule = _events.Rule(self, "ICS_IMAGE_CONTENT_RULE",
+            rule_name="ICS_IMAGE_CONTENT_RULE",
             description="The event from image analyzer to store the data",
             event_bus=event_bus,
             event_pattern=_events.EventPattern(resources=[image_analyzer_function.function_arn]),

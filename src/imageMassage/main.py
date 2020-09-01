@@ -8,7 +8,7 @@ import botocore
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-queue_name = os.environ["VAQUITA_IMAGE_MASSAGE"]
+queue_name = os.environ["ICS_IMAGE_MASSAGE"]
 sqs = boto3.resource('sqs')
 
 def handler(event, context):

@@ -6,7 +6,7 @@ import time
 import hashlib
 
 from botocore.exceptions import ClientError
-images_bucket = os.environ['VAQUITA_IMAGES_BUCKET']
+images_bucket = os.environ['ICS_IMAGES_BUCKET']
 default_signedurl_expiry_seconds = os.environ['DEFAULT_SIGNEDURL_EXPIRY_SECONDS']
 
 def handler(event, context):
